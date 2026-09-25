@@ -292,6 +292,14 @@ svg.sprite .va{animation:none}
 .play .icon{width:24px;height:24px;stroke-width:2.6}
 /* the sweep while a task runs: the ink's own colour, so it shows on a light fill as well as a dark one */
 .play .fillbar{position:absolute;inset:0 auto 0 0;width:0;background:currentColor;opacity:.18;pointer-events:none}
+/* 2026-09-26: 何％か分からない作業（コンパイルなど。終わるまで数字が出ません）。止まった棒は「固まった」に
+   見えるので、細い帯を流します。動きを減らす設定の時は流さず、薄く塗るだけにします（持ち主 2026-09-26
+   「プレイボタンのところに進捗出すんじゃなかったの？」）。 */
+.play .fillbar.flow{width:100%;opacity:.14;
+  background:linear-gradient(90deg,transparent 0%,transparent 28%,currentColor 44%,currentColor 56%,transparent 72%,transparent 100%);
+  background-size:260% 100%;animation:sp-flow 1.35s linear infinite}
+@keyframes sp-flow{from{background-position:130% 0}to{background-position:-130% 0}}
+@media (prefers-reduced-motion:reduce){.play .fillbar.flow{animation:none;background:currentColor;opacity:.10}}
 .play > span{position:relative}
 /* label + (install / update only) a small line with size and time */
 .play-txt{display:grid;justify-items:center;gap:6px}
@@ -3000,7 +3008,17 @@ addEventListener('resize', () => placeInd(true));
 
 /* ---------- play button: state (today's warning line) + primary action ---------- */
 const playBtn = $('#playBtn'), playLabel = $('#playLabel'), playFill = $('#playFill'), playIconUse = $('#playIcon use');
-const fillSp = new Spring({ tension:170, friction:26, value:0, onUpdate:p => { playFill.style.width = (clamp01(p) * 100) + '%'; } });
+/* 何％か分からない作業の「流れる帯」。flowSp より **先に** 置きます: onUpdate はばねが動くたびに走るので、
+   宣言より前に一度でも走ると ReferenceError で止まります。 */
+let flowing = false;
+/* 流れる帯の間は幅を書きません（CSS の 100% を、その場の inline style が上書きしてしまうため） */
+const fillSp = new Spring({ tension:170, friction:26, value:0, onUpdate:p => { if (!flowing) playFill.style.width = (clamp01(p) * 100) + '%'; } });
+function flowOn(on){
+  if (flowing === !!on) return;
+  flowing = !!on;
+  playFill.classList.toggle('flow', flowing);
+  if (!flowing) { playFill.style.width = '0%'; fillSp.set(0); }
+}
 /* one entry per warning line of the current launcher (friend: red / orange / green, dev: red / orange / green) + two new ones */
 const PSTATE = {
   ready:      { icon:'i-play',     dot:'',       btn:'play' },
@@ -3020,7 +3038,8 @@ const TASKS = {
   sync:      { cmd:'syncSteam',   steps:['s.sy1', 's.sy2'] },
   update:    { cmd:'checkUpdate', steps:['s.up1', 's.up2'] },
   devUpdate: { cmd:'devUpdate',   steps:['s.dv1', 's.dv2', 's.dv3'] },
-  rebuild:   { cmd:'rebuild',     steps:['s.rb1'] }
+  /* flow: コンパイラは「何％」を言いません。1/1 のまま 1〜2 分かかるので、棒を流します（2026-09-26） */
+  rebuild:   { cmd:'rebuild',     steps:['s.rb1'], flow:true }
 };
 let pstate = 'ready', busy = false, running = false, plogRows = [], busyKey = null;
 const playSub = $('#playSub');
@@ -3089,7 +3108,13 @@ async function runTask(name){
   const task = TASKS[name]; busy = true;
   const from = task.done || 0;
   plogRows = task.steps.map((k, i) => ({ k, st: i < from ? 'skip' : '' }));
-  playBtn.setAttribute('aria-busy', 'true'); renderPlay();
+  playBtn.setAttribute('aria-busy', 'true');
+  /* ボタンの文は、始まった時点で「その作業の名前」にします。アプリからの進捗を待つと、
+     最初の 1 通が来るまで前の文（「プレイ」）のままでした。 */
+  playLabel.textContent = t('ps.working');
+  /* 何％か言えない作業は、帯を流しておきます（進捗が届いたら、下の flowOff が止めます） */
+  flowOn(task.flow === true);
+  renderPlay();
   const result = bridge.invoke(task.cmd);
   if (!bridge.native) {
     const n = task.steps.length;
@@ -3102,12 +3127,17 @@ async function runTask(name){
     }
   }
   const r = await result;
-  busy = false; playBtn.removeAttribute('aria-busy'); fillSp.set(0);
+  busy = false; playBtn.removeAttribute('aria-busy'); flowOn(false); fillSp.set(0);
   if (!r.ok) {
     const cur = plogRows.find(x => x.st === 'run'); if (cur) cur.st = 'err';
     if (name === 'install' || name === 'resume') pstate = 'failed';
     renderPlay(); report(r, t(PSTATE[pstate].btn)); return false;
   }
+  /* 2026-09-26: 終わった行に印を付けます。失敗の時だけ印を付けていたので、**うまくいった時は
+     「実行中…」のまま残り**、ボタンだけ「プレイ」に戻っていました。短い作業（差分だけの再ビルドなど）だと、
+     終わったのに進行ログが動き続けているように見えます（持ち主が画面を見て気づきました）。 */
+  for (const row of plogRows) if (row.st !== 'skip') row.st = 'ok';
+  fillSp.set(1); setTaskbar(0);
   pstate = 'ready'; $('#stateSel').value = 'ready'; renderPlay();
   toast(t('toast.done')); return true;
 }
@@ -3212,7 +3242,7 @@ async function launch(){
   const result = bridge.invoke('launch');
   if (!bridge.native) for (let n = 1; n <= 13; n++) { playLabel.textContent = t('play.checking', { n }); fillSp.to(n / 13); setTaskbar(n / 13); await wait(RM.matches ? 0 : 85); }
   const r = await result;
-  busy = false; playBtn.removeAttribute('aria-busy'); fillSp.set(0);
+  busy = false; playBtn.removeAttribute('aria-busy'); flowOn(false); fillSp.set(0);
   if (!r.ok) { renderPlay(); report(r, t('play')); return; }
   running = true; plogRows = []; renderPlay();
   toast(t('toast.launched'));
@@ -3261,10 +3291,12 @@ document.addEventListener('host:progress', e => {
     return;
   }
   if (d.task === 'update' && typeof d.bytes === 'number' && d.total) { paintUpd(d.bytes / d.total, d.bps ? d.bps / 1e6 : 0, d.etaSec, d.total / 1e6); return; }
-  if (typeof d.value === 'number') { fillSp.to(d.value); setTaskbar(d.value); }
+  /* 本当の数字が届いたら、流れる帯をやめて、その値の棒にします（0 も「まだ 0%」という本当の値です） */
+  if (typeof d.value === 'number' && d.value > 0) { flowOn(false); fillSp.to(d.value); setTaskbar(d.value); }
   if (d.task === 'prelaunch' && d.step) playLabel.textContent = t('play.checking', { n:d.step });
   else if (d.step && d.of) {
-    playLabel.textContent = `${d.step}/${d.of} ${t('ps.working')}`;
+    /* 1 歩しかない作業で「1/1」は数えている意味がないので、その時は歩数を出しません */
+    playLabel.textContent = d.of > 1 ? `${d.step}/${d.of} ${t('ps.working')}` : t('ps.working');
     plogRows.forEach((row, i) => { if (row.st !== 'skip') row.st = i < d.step - 1 ? 'ok' : i === d.step - 1 ? 'run' : ''; });
     renderPlog();
   }

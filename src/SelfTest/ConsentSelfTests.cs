@@ -238,6 +238,40 @@ namespace Starpocket.Client.SelfTest
                 r.Equal("reason", "needConsent", m["reason"] as string);
             });
 
+            // 2026-09-26: AppInfo が 0.9 / 0.9 / 0.8 と言い、画面に出る文書は「利用規約（案）・版: 0.9（案・まだ公開して
+            // いません）」でした。**もう公開しているのに、下書きに同意を求めていました。** 番号だけは合っていたので、
+            // 番号どうしを見るだけの試験では気づけません。**ファイルの中を読んで**突き合わせます。
+            r.Test("同梱の文書と AppInfo の版が合っている", () =>
+            {
+                string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\'), "ui", "legal");
+                if (!Directory.Exists(dir)) { r.Info("ui\\legal が隣にありません（そろっているかは PackageFiles が見ます）"); return; }
+                var 版 = new[] { new { doc = "terms", want = AppInfo.TermsVersion },
+                                 new { doc = "privacy", want = AppInfo.PrivacyVersion },
+                                 new { doc = "rules", want = AppInfo.RulesVersion } };
+                foreach (var d in 版)
+                    foreach (var lang in new[] { "ja", "zh-CN", "en" })
+                    {
+                        string p = Path.Combine(dir, d.doc + "." + lang + ".md");
+                        if (!File.Exists(p)) { r.Check(d.doc + "." + lang + ": ある", false); continue; }
+                        string[] lines = File.ReadAllLines(p, Encoding.UTF8);
+                        string head = lines.Length > 0 ? lines[0] : "";
+                        // 見出しに「案」の印が残っていないこと（下書きに同意を求めない）
+                        r.Check(d.doc + "." + lang + ": 見出しが下書きのままでない  <" + head + ">",
+                                head.IndexOf("（案）", StringComparison.Ordinal) < 0
+                                && head.IndexOf("（草案）", StringComparison.Ordinal) < 0
+                                && head.IndexOf("(draft)", StringComparison.Ordinal) < 0);
+                        // 版の行（3 行目）が AppInfo と一致すること
+                        string ver = null;
+                        foreach (var l in lines)
+                        {
+                            var m = System.Text.RegularExpressions.Regex.Match(l, @"^- (?:版|版本|Version)[:：]\s*([0-9]+\.[0-9]+)\s*$");
+                            if (m.Success) { ver = m.Groups[1].Value; break; }
+                            if (l.StartsWith("---", StringComparison.Ordinal)) break;
+                        }
+                        r.Equal(d.doc + "." + lang + ": 版が AppInfo と同じ", d.want, ver);
+                    }
+            });
+
             r.Test("版の番号が 3 つとも入っている", () =>
             {
                 r.Check("terms", Consent.IsValidVersion(AppInfo.TermsVersion));

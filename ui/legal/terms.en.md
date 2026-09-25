@@ -1,12 +1,10 @@
-# StarPocket Games Terms of Use (draft)
+# StarPocket Games Terms of Use
 
-- Version: 0.9 (draft, not published yet)
-- Last edited: 2026-09-24
-- Takes effect: not decided yet (set when published)
+- Version: 1.0
+- Last edited: 2026-09-26
+- Takes effect: 2026-09-26
 
-> This is a draft. It is not legal advice.
->  = to check with a lawyer or an advice line.  = the owner decides.
-> The Japanese version is the original. The published version will not have these marks or the "Note" lines.
+> The Japanese version is the original.
 
 ---
 
@@ -777,3 +775,4 @@ How personal information is handled is written in the Privacy Policy.
 | 0.7 (draft) | 2026-09-23 | Applied the owner's decisions (D-39, D-40, D-41, D-42). Changed the conditions for a shared ban made from other hosts' records: one host is still enough for a "Certain" detection, but at most 2 per 30 days may come from one and the same host, and anything else now needs 3 or more different hosts within 30 days (was 2 or more) (Article 15(4)). S-11 may now be applied after reports are found to be wrong on appeal 3 times within 30 days (was 5; the owner: "five is too many, pick a number you think is right and I approve it") (Article 13(1)). Rewrote the promise about fees: there are no paid features, no paid membership and no paid roles; optional support is accepted in one place only, on the official site; supporting us changes nothing (not the speed of a reply, not a room restriction, not a place in a queue); and anyone asking for money anywhere else is not us (short version, Article 7). The note on standard terms now says the Services stay free even with optional support. The brand is spelled "StarPocket". Once a support platform is chosen, the Privacy Policy will need a section about it.  |
 | 0.8 (draft) | 2026-09-23 | Put the number of different hosts a shared ban needs back to **2 or more** (Article 15(4)). The "3" had been written into the drafts without ever asking the owner (the official site was not published yet at that time, so it never went out on a published page); on 2026-09-23 the owner answered "keep 2 for now; raise it later when there are more hosts" (D-39). Said that the number may go up as more hosts join, and separated it from the "at most 2 per 30 days from one and the same host" next to it, which is a count of bans. The cap (2 per 30 days) and the mistake count (3 times in 30 days) are unchanged |
 | 0.9 (draft) | 2026-09-24 | Moved closer to the shape of the Riot Games terms by adding 13 articles: Article 10 (Playing fair), Article 11 (Monitoring and anti-cheat), Article 12 (Updates and the definitions file), Article 14 (Our promises about fairness), Article 18 (Outside services), Article 21 (Disputes between users), Article 23 (Claims that rights have been infringed), Article 25 (How we reach you), Article 27 (Succession and transfer), Article 28 (No organised crime), Article 29 (If part of this is invalid), Article 30 (Promises that survive), Article 31 (Which document wins). **The articles were renumbered from Article 1.** Old Article 10 (limits) is now Article 13, and old Article 18 (changes to these terms) is now Article 26. The article numbers in the 0.8 and earlier rows of this table have been updated to the new numbers as well. Article 28(4)'s liability wording was aligned with Article 20(3) (Consumer Contract Act Article 8(1)). The number of scanned items was removed from Article 11(2)(1) (the Client and the launcher scan different numbers). Article 25(7)(3) was rewritten to describe what actually exists (the required version inside the signed definitions file) |
+| 1.0 | 2026-09-26 | The first published version. **The text itself is unchanged from 0.9.** The "(draft)" marks, the lines explaining those marks and the "not published yet" wording are gone, and the date it takes effect is filled in. |

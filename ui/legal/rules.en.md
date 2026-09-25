@@ -1,13 +1,11 @@
-# PocketRoles Play Rules (Aegis Rules) (draft)
+# PocketRoles Play Rules (Aegis Rules)
 
-- Version: 0.8 (draft, not published yet)
-- Last edited: 2026-09-23
-- Starts on (takes effect): not decided yet (set when published)
+- Version: 1.0
+- Last edited: 2026-09-26
+- Starts on (takes effect): 2026-09-26
 - Made by: StarPocket Games (the activity name of one hobby developer; not a company)
 
-> This is a draft. It is not legal advice.
->  = to check with a lawyer or an advice line.  = the owner decides.  = the software does not match this text yet.
-> The Japanese version is the original. The published version will not have these marks or the "Note" lines.
+> The Japanese version is the original.
 
 ---
 
@@ -339,3 +337,4 @@ Every article has a number. Aegis and the error-code screens show a number like 
 | 0.6 (draft) | 2026-09-23 | Applied the owner's decisions (D-36 item 3, D-37, D-38). What happens when a shared ban starts while you are hosting now depends on the reason: for cheating (killrole, speedhack, cheat), PocketRoles leaves at once even mid-match; for other reasons, after that match (Article 9(6)). Corrected on the same day by a review: item 5's reason words now match what a shared-ban line really carries (killrole, ventrole, abilityrole, taskimpostor, cheat, chat, harass, name, other), and only a certain detection makes the host leave mid-match (speedhack and cheat are ); local rooms in item 6 are allowed (the author can stop them with `local = block`); Article 10(4)(1) now says the author receives every record of you on that PC. Added that, for an appeal whose record is only on a host's PC, the author asks that host for only that person's records (a "One player's evidence" zip), and that evidence records stay on the host's PC for 90 days (not deleted while the restriction lasts, and 30 more days after it ends) (Article 10(4)(1)). One-person exports must not be changed or posted either (Article 7(1)(3) and (4)). The 30 days for counting overturned reports are now said to match how long `reporters.txt` is kept (Article 7(3); evidence records now stay 90 days) |
 | 0.7 (draft) | 2026-09-23 | Applied the owner's decisions (D-39, D-40, D-41, D-42). The examples of hurtful words now describe the kinds of words instead of naming any, and the line about the word lists now says only that the list is no longer printed as it is - not that it is secret (Article 5(1)). Changed the shared-ban numbers and published them: one host for "Certain" (at most 2 per 30 days from the same host), 3 or more different hosts within 30 days for anything else (was 2 or more), and reports are not accepted from a host whose reports were found to be wrong on appeal 3 times within 30 days (was 5; the owner: "five is too many, pick a number you think is right and I approve it") (Article 7(3), Article 9(2)). Said that chat translation is off by default (Article 7(1)(6)). Kept the rule that hosts must not make money from rooms, and added that the author covers the running costs only through the optional support link on the official site (Article 7(1)). The brand is spelled "StarPocket" |
 | 0.8 (draft) | 2026-09-23 | Put the number of different hosts a shared ban needs back to **2 or more** (Article 9(2)(2), and the published-numbers part at the end of Article 9(2)). The "3" had been written into the drafts without ever asking the owner (the official site was not published yet at that time, so it never went out on a published page). On 2026-09-23 the owner answered: "keep 2 for now - with so few hosts, 3 would mean shared bans almost never happen; raise it later when there are more hosts" (D-39). Added one sentence saying the number may go up as more hosts join. Rewrote the published-numbers part as three separate items - **hosts** (2 or more different hosts), **bans** (2 per 30 days from the same host) and **mistakes** (wrong on appeal 3 times in 30 days) - so they cannot be confused. The bans and mistakes numbers are unchanged |
+| 1.0 | 2026-09-26 | The first published version. **The rules themselves are unchanged from 0.8.** The "(draft)" marks, the lines explaining those marks and the "not published yet" wording are gone, and the date it takes effect is filled in. |

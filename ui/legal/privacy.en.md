@@ -1,14 +1,11 @@
-# StarPocket Games Privacy Policy (draft)
+# StarPocket Games Privacy Policy
 
-- Version: 0.9 (draft, not published yet)
-- Last edited: 2026-09-24
-- Takes effect: not decided yet (set when published)
+- Version: 1.0
+- Last edited: 2026-09-26
+- Takes effect: 2026-09-26
 
-> This is a draft. It is not legal advice.
->  = to check with a lawyer or the Personal Information Protection Commission's advice line.  = the owner decides.
 > "(planned)" = a feature not built yet. By the day that feature is released, this document will be made to match what is true.
->  = the current software does not match this document. The software will be fixed before publishing.
-> The Japanese version is the original. The published version will not have these marks or notes.
+> The Japanese version is the original.
 
 ---
 
@@ -568,3 +565,4 @@ We use information about individuals only for:
 | 0.7 (draft) | 2026-09-23 | Applied the owner's decisions (D-39, D-40, D-41, D-42). Said that the check on running apps now looks not only at names but also at the program file on disk - its content fingerprint (SHA-256), embedded version info and signer name (3.11; from v0.5.5; whether something is Microsoft's is decided by whether its certificate chains to a Microsoft root, not by the displayed signer name; only apps in your own Windows session are checked; nothing is sent anywhere). Chat translation and automatic reporting are now both off by default (summary, 3.9, 3.10, Article 15(1)(1); this overrides the decision of 2026-09-22). Changed the shared-ban conditions (3.5: one host for "Certain" with at most 2 per 30 days from the same host; 3 or more different hosts within 30 days for anything else; reports wrong on appeal 3 times within 30 days). The brand is spelled "StarPocket". Once a support platform is chosen, a section on receiving support (what reaches the payment company, refunds, how long records are kept) will be needed. Corrected the same day by a review: the summary line for chat translation now names its default (off), and both summary lines and the 3.9 table now say today's build still has it on, so it sends unless you turn it off (Summary, 3.9). The program-file explanation was split from one long line into five (3.11). The shared-ban-gate description now matches the branch (3 within 30 days, comes back by itself with time, `reporters.txt` pruned at 30 days, "Certain" capped at 2 per 30 days; what is left is `MinHosts` 3 and merging the branch into v0.5.5) (3.5; that "`MinHosts` 3" was withdrawn in 0.8 - the number stays 2) |
 | 0.8 (draft) | 2026-09-23 | Put the number of different hosts a shared ban needs back to **2 or more** (3.5). The "3" had been written into the drafts without ever asking the owner (the official site was not published yet at that time, so it never went out on a published page); on 2026-09-23 the owner answered "keep 2 for now - with so few hosts, 3 would mean shared bans almost never happen; raise it later when there are more hosts" (D-39). Said the number may go up as more hosts join, and split the three numbers that sit together into **hosts** (2 or more different hosts), **bans** (2 per 30 days from the same host) and **mistakes** (3 times within 30 days). The bans and mistakes numbers are unchanged. Also corrected the note about the ban console: the host count (`GateRules.MinHosts = 2`) already matches, and all that is left is merging shared-ban-gate into v0.5.5 (3.5). In the same day's review, one row was added to Article 5: other people's names, account names and URLs written in a report of a fake download site are deleted 30 days after the report has been checked and dealt with. No new intake is built; one label is added to the existing support requests instead (`SUPPORT-SPEC` §5.8) |
 | 0.9 (draft) | 2026-09-24 | Followed the renumbering of the Terms (Article 10 became Article 13). Added item 4 to Article 7(2) (handing over the running of the Services; Terms of Use Article 27, Act on the Protection of Personal Information Article 27(5)(ii)) |
+| 1.0 | 2026-09-26 | The first published version. **The text itself is unchanged from 0.9.** The "(draft)" marks, the lines explaining those marks and the "not published yet" wording are gone, and the date it takes effect is filled in. |

@@ -14,7 +14,7 @@ namespace Starpocket.Client
         /// with EACH OTHER but has no way of knowing which number this release should carry, so a stale one passes CI
         /// in silence and then names itself in the log's first line, --action's heading, the report zip and the exe's
         /// own properties (v0.4 review: all three still said 0.3.0 in the middle of v0.4).</summary>
-        public const string Version = "1.0.1";
+        public const string Version = "1.0.2";
         /// <summary>The version the UI shows in "not in this version (v0.4)" notices.</summary>
         public const string UiVersion = "1.0";
 
@@ -22,15 +22,21 @@ namespace Starpocket.Client
         // These are NOT the app's version: they move when the document is changed in a way that needs asking again
         // (Terms of Use Article 26(4)), and they stay put for a typo fix (Article 26(5)). Consent.Covers compares the
         // record in consent.json with exactly these three, so a bump here is what brings the screen back.
-        // 2026-09-24: the drafts are at 0.9 and are NOT published yet. The moment they are, these become "1.0" and the
-        // bundled copies under ui\legal\ are replaced with the published text. Do not move one without the other:
-        // a version here that does not match the file on screen makes the record say something that was never shown.
+        // 2026-09-26: published. Until now these said 0.9 / 0.9 / 0.8, and ui\legal\ held the drafts - so the screen
+        // asked people to agree to a document whose own first lines read 「利用規約（案）」 and 「版: 0.9（案・まだ公開して
+        // いません）」, while the site was already serving it (found by testing the v1.0.1 build). The owner confirmed the
+        // text is final, so all three moved to 1.0 together with the files under ui\legal\, which are rebuilt from the
+        // same drafts by legal\確定にする.pl + legal\公開用に清書する.pl. **The text of the documents did not change** -
+        // only the title, the version line, the dates and the lines that described the draft marks.
+        // Do not move one without the other: a version here that does not match the file on screen makes the record say
+        // something that was never shown. src\SelfTest\ConsentSelfTests.cs ("同梱の文書と AppInfo の版が合っている")
+        // opens the nine files next to the exe and fails if a title still carries a draft mark or a version differs.
         /// <summary>利用規約 / Terms of Use.</summary>
-        public const string TermsVersion = "0.9";
+        public const string TermsVersion = "1.0";
         /// <summary>プライバシーポリシー / Privacy Policy.</summary>
-        public const string PrivacyVersion = "0.9";
+        public const string PrivacyVersion = "1.0";
         /// <summary>遊び方のルール / Play Rules.</summary>
-        public const string RulesVersion = "0.8";
+        public const string RulesVersion = "1.0";
 
         /// <summary>Taskbar identity (PORT-MAP 10; the 2026-09-23 spelling: nothing is released yet, and after a release a
         /// change here would drop pinned taskbar buttons and jump lists).</summary>

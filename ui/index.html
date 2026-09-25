@@ -1924,9 +1924,14 @@ body:has(#m-settings:not([hidden])) .toast{background:var(--set-sel);color:var(-
       </div>
       <div class="fr-doc">
         <div class="fr-doctext" id="frDocText" role="tabpanel" tabindex="0" aria-labelledby="frTab-terms"></div>
+        <!-- 「ブラウザで開く（準備中）」のボタンは 2026-09-26 に外しました。押せない物を最初の画面に
+             置かないためです。その説明文は「この 3 つの文書は、まだウェブに出していません」でしたが、
+             もう出ています（starpocketgames.com/terms.ja.html など）。押せるようにするには、ページから
+             URL を受け取らない形の命令（doc と lang だけを渡し、行き先は C# 側の表で決める物）を
+             Bridge に足し、それを BeforeConsent に入れる必要があります。同意の関所そのものを広げる
+             変更なので、思いつきでやらないでください。 -->
         <div class="fr-docfoot">
           <span id="frVer"></span>
-          <button type="button" class="fr-open" id="frOpen">ブラウザで開く ›</button>
         </div>
       </div>
     </div>
@@ -4862,8 +4867,7 @@ community.init();
         '規約を大事なところで変える時は、もう一度この画面を出します。'
       ],
       tabTerms:'利用規約', tabPrivacy:'プライバシーポリシー', tabRules:'遊び方のルール',
-      version:'版 {0}', openBrowser:'ブラウザで開く（準備中）', loading:'読み込んでいます…',
-      openSoon:'この 3 つの文書は、まだウェブに出していません。上の箱でお読みください。',
+      version:'版 {0}', loading:'読み込んでいます…',
       docBlocked:'文書を読み込めませんでした。読めていない物に同意はできません。Client を入れ直してください。',
       loadFail:'文書を開けませんでした。Client の入っているフォルダの ui\\legal\\{0} を見てください。',
       trLabel:'チャット翻訳を使う',
@@ -4896,8 +4900,7 @@ community.init();
         '条款的重要部分有变化时，会再次显示这个画面。'
       ],
       tabTerms:'使用条款', tabPrivacy:'隐私政策', tabRules:'游戏规则',
-      version:'版本 {0}', openBrowser:'在浏览器中打开（准备中）', loading:'正在载入…',
-      openSoon:'这三份文件尚未发布到网上。请在上面的框中阅读。',
+      version:'版本 {0}', loading:'正在载入…',
       docBlocked:'无法载入文件。无法同意没有显示出来的内容。请重新安装 Client。',
       loadFail:'无法打开文档。请查看 Client 所在文件夹的 ui\\legal\\{0}。',
       trLabel:'使用聊天翻译',
@@ -4930,8 +4933,7 @@ community.init();
         'If the terms change in an important way, this screen appears again.'
       ],
       tabTerms:'Terms of Use', tabPrivacy:'Privacy Policy', tabRules:'Play Rules',
-      version:'Version {0}', openBrowser:'Open in browser (coming soon)', loading:'Loading…',
-      openSoon:'These three documents are not on the web yet. Please read them in the box above.',
+      version:'Version {0}', loading:'Loading…',
       docBlocked:'The documents could not be loaded. You cannot agree to text that was not shown. Please reinstall the Client.',
       loadFail:'The document could not be opened. Look in ui\\legal\\{0} next to the Client.',
       trLabel:'Use chat translation',
@@ -4967,10 +4969,13 @@ community.init();
      つまり住所を書き換えても開きません。開けるようにするには C# 側で 3 か所
      （Supported へ移す・BeforeConsent に足す・AllowedWebPages に足す）が要ります。
      それまでは下のボタンを押せなくしてあります。この表は、その時の下書きとして残します。 */
+  /* 公開ページの本当の場所（2026-09-26 に実際に開いて確かめました）。
+     前は '/{lang}/terms/' と書いてありましたが、そんな道はありません。押せないボタンだったので
+     だれも気づきませんでした。{lang} は ja / zh / en です（同梱の .md だけが zh-CN）。 */
   const SITE = {
-    terms:'https://starpocketgames.com/{lang}/terms/',
-    privacy:'https://starpocketgames.com/{lang}/privacy/',
-    rules:'https://starpocketgames.com/{lang}/rules/'
+    terms:'https://starpocketgames.com/terms.{lang}.html',
+    privacy:'https://starpocketgames.com/privacy.{lang}.html',
+    rules:'https://starpocketgames.com/rules.{lang}.html'
   };
 
   let info = null;          /* アプリが送ってきた firstRun（版の番号など） */
@@ -5002,13 +5007,6 @@ community.init();
     el('frTab-privacy').textContent = d.tabPrivacy;
     el('frTab-rules').textContent = d.tabRules;
     el('frVer').textContent = fmt(d.version, verOf(doc));
-    /* 行き先がまだ無いので押せなくします。設定の footer の「利用規約（準備中）」と同じ扱いです。
-       押せる見た目で何も起きないのが、同意の画面では一番よくない形でした。 */
-    const openBtn = el('frOpen');
-    openBtn.textContent = d.openBrowser;
-    openBtn.disabled = true;
-    openBtn.title = d.openSoon;
-
     el('frTrLabel').textContent = d.trLabel;
     el('frTrLine').textContent = d.trLine;
     el('frTrWhen').textContent = d.trWhen;
@@ -5186,9 +5184,10 @@ community.init();
   el('frAskQuit').addEventListener('click', () => bridge.invoke('consent.decline'));
   el('frUninstall').addEventListener('click', () => bridge.invoke('uninstall', {}));
   el('frAskUninstall').addEventListener('click', () => bridge.invoke('uninstall', {}));
-  /* frOpen は押せません（上の paint を参照）。開けるようにする日が来たら、ここで
-     bridge.invoke('openExternal', { url: SITE[doc].replace('{lang}', lg === 'zh' ? 'zh-CN' : lg) })
-     を返してください。lang が 'zh' の時にファイル名が 'zh-CN' になる点に注意（公開ページ側は zh です）。 */
+  /* 「ブラウザで開く」を作る日が来たら: 行き先は下の SITE です。**ページから URL を受け取る形に
+     しないでください**（差し替えられたページが、同意の前に好きな所を開けてしまいます）。doc と lang
+     だけを渡し、行き先は C# 側の表で決める命令を足して、それを Bridge.BeforeConsent に入れます。
+     lang が 'zh' の時、サイトのファイル名も 'zh' です（同梱の .md だけが 'zh-CN'）。 */
   /* Esc は「同意しない」と同じ確認へ。何もせず消える道は作りません */
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || el('firstrun').hidden) return;

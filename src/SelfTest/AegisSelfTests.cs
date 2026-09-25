@@ -1045,7 +1045,37 @@ namespace Starpocket.Client.SelfTest
                 byte[] b = File.ReadAllBytes(path);
                 string stamp = Clock0.ToString("yyyy-MM-dd HH:mm:ss"), stamp1 = Clock0.AddSeconds(1).ToString("yyyy-MM-dd HH:mm:ss");
                 r.Check("a new file starts with a BOM; lines \"<time>  text\" CRLF", b.Take(3).SequenceEqual(new byte[] { 0xEF, 0xBB, 0xBF }) && ReadNoBom(path) == stamp + "  監視を始めました\r\n" + stamp1 + "  second\r\n");
-                if (stamp != Clock0.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)) r.Info("this PC's culture writes times as " + stamp + " (PORT-MAP 9.2 A-13: such lines are never pruned)");
+                // PORT-MAP 9.2 A-13, fixed 2026-09-26: "HH:mm:ss" with the CURRENT culture asks Windows for that culture's
+                // TIME SEPARATOR, so on a PC where it is not ":" every stamp came out "21.04.12" (fi-FI, id-ID, en-DK ... 14
+                // cultures) or "21h04h12" (oc-FR) while Prune only read ":" - and not one line with a player name in it was
+                // ever dropped there. These two run the writer under those cultures on ANY PC, so the hole cannot reopen
+                // quietly: the old code fails them on an en-US runner too.
+                r.Equal("the stamp is Invariant, not this PC's culture", Clock0.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture), stamp);
+                foreach (var name in new[] { "fi-FI", "id-ID", "en-DK", "oc-FR" })
+                {
+                    var was = System.Threading.Thread.CurrentThread.CurrentCulture;
+                    string wrote;
+                    try
+                    {
+                        System.Threading.Thread.CurrentThread.CurrentCulture = CultureInfo.GetCultureInfo(name);
+                        string one = r.NewDir("events-" + name);
+                        EventsLog.Append(one, Clock0, "Bad Guy を退出させました");
+                        wrote = ReadNoBom(Path.Combine(one, "events.log"));
+                    }
+                    finally { System.Threading.Thread.CurrentThread.CurrentCulture = was; }
+                    r.Equal(name + ": written with \":\" whatever this PC's time separator is", stamp + "  Bad Guy を退出させました\r\n", wrote);
+                }
+                // and the lines ALREADY written the broken way, on those same PCs, still have to age out
+                foreach (var sep in new[] { '.', 'h', ':' })
+                {
+                    string old = "2026-08-01 10" + sep + "00" + sep + "00  old event", now2 = "2026-09-20 09" + sep + "00" + sep + "00  new event";
+                    string one = r.NewDir("events-sep-" + (sep == ':' ? "colon" : sep == '.' ? "dot" : "h"));
+                    string p2 = Path.Combine(one, "events.log");
+                    File.WriteAllText(p2, old + "\r\n" + now2 + "\r\n", Utf8NoBom);
+                    r.Equal("stamps written with '" + sep + "' are pruned too (A-13)", 1, EventsLog.Prune(one, 30, Clock0));
+                    r.Equal("... and the newer line stays", now2 + "\r\n", ReadNoBom(p2));
+                }
+                r.Check("a line of text is still unstamped", !EventsLog.TryStamp("note at the top", out _) && !EventsLog.TryStamp("2026-08-01 10:00.00  mixed", out _) && !EventsLog.TryStamp("2026-08-01 10000000  digits", out _));
 
                 string text = "note at the top\r\n2026-08-01 10:00:00  old event\r\ncontinued old line\r\n2026-08-23 21:04:12  exactly 30 days\r\n2026-09-20 09:00:00  new event\r\ncontinued new\r\n";
                 File.WriteAllText(path, text, Utf8NoBom);

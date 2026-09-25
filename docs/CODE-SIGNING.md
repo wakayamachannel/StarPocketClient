@@ -32,7 +32,7 @@ dotnet build   StarpocketClient.csproj -c Release -p:ContinuousIntegrationBuild=
 
 - 公開の GitHub Actions（`.github/workflows/build.yml`、`windows-latest`）で、push のたびに同じ手順でビルドしています。**秘密の値は 1 つも使っていません**（ワークフローに `secrets.` の字は 1 つもありません。権限は `contents: read` だけです）。
 - 取ってくるものは NuGet の `Microsoft.Web.WebView2`（版を固定: 1.0.3485.44）と、`uses:` で指定した GitHub の action だけです。
-  action は `actions/checkout@v4` のように**大きい版だけ**を書いています。これは動く目印なので、同じ行のままでも中身が入れ替わることがあります（コミットの SHA での固定は、まだ行っていません）。
+  action は `actions/checkout@11d5960a326750d5838078e36cf38b85af677262` のように**コミットの SHA で固定**しています（`@v4` は、その横のコメントに残してあるだけです）。`@v4` は動く目印なので、同じ行のままでも中身が入れ替わります。SHA なら入れ替わりません。**この 1 つのファイルだけから、だれでも同じ exe を建て直せます。** action を新しくする時は、新しい SHA を手で書き直します（手間ですが、それが狙いです）。
 - `ContinuousIntegrationBuild` と csproj の `PathMap` により、ビルドしたマシンのパスは exe に入りません（同じソースから同じものができます）。
 - CI は、ビルドのあとに次の 3 つも行います。どれかが落ちればビルドは赤くなります。
   1. `bin` と `obj` を除く**すべての `.cs`** を読み、`Process.Start(`・`new Process`・`ShellExecute…(`・`CreateProcess…(`・`WinExec(`・`EntryPoint="ShellExecute…` が `src\Core\ShellOpen.cs` 以外に無いこと
@@ -161,12 +161,16 @@ Steam と Steam 版の Among Us には、いかなる場合も触りません（
 
 足りないのは**オーナーにしかできないこと**と、まだ作っていないものです。手順はオーナーの手元の控えにあります。
 
-1. **公開はこれからです（オーナーの操作）。** ソースも、公開 CI の決まり（`.github\workflows\build.yml`）も、このリポジトリに揃っています。残っているのは GitHub に上げる操作だけです（今は `git remote` が空です）。上げた時点で Actions が動き、そこから実行の記録が残ります。
-2. **リリースもこれからです。** 署名してほしい形（CI が保存する `StarPocketClient-unsigned`）は、公開 CI がそのまま作ります。あとは 1 回リリースするだけです。SignPath は「署名してほしい形のものが、すでに配布されていること」を見ます。
-3. **セットアップのプログラムがありません。** 今は zip を展開して使う形です。そのため「アプリと機能」に項目はできません（アンインストールは、アプリの設定の中と `--uninstall` から行います）。
-4. **CI の action をコミットの SHA で固定していません**（今は `@v4` という大きい版だけ）。
-5. サポートサイトの「プライバシー」と「コード署名について」のページ。
-6. SignPath のアカウントと 2 要素認証。
+1. **セットアップのプログラムがありません。** 今は zip を展開して使う形です。そのため「アプリと機能」に項目はできません（アンインストールは、アプリの設定の中と `--uninstall` から行います）。
+2. SignPath のアカウント。
+
+**済んだもの**（2026-09-26 時点）:
+
+- 公開: <https://github.com/wakayamachannel/StarPocketClient>（GPL-3.0、Actions が動いています）
+- CI の action は、すべてコミットの SHA で固定済みです。
+- サイトのページ: [プライバシーポリシー](https://starpocketgames.com/privacy.ja.html)・[コード署名について](https://starpocketgames.com/code-signing.ja.html)・[利用規約](https://starpocketgames.com/terms.ja.html)・[遊び方のルール](https://starpocketgames.com/rules.ja.html)・[エラーコード](https://starpocketgames.com/codes/)（3 言語）
+- GitHub の 2 要素認証。
+- リリースは `v1.0.0` から始めます。配るのは、**公開 CI がそのタグから建てた** `StarPocketClient-unsigned` です（手元の PC で建てた物は配りません）。
 
 ---
 
@@ -180,8 +184,10 @@ PowerShell scripts with one native Windows app, so it shows in Task Manager unde
   → `bin\Release\StarPocket Client.exe`. This runs on every push in public GitHub Actions
   (`.github/workflows/build.yml`, `windows-latest`). **No secrets are used** (the workflow contains no `secrets.` at all
   and asks only for `contents: read`). The only downloads are the `Microsoft.Web.WebView2` NuGet package, pinned to an
-  exact version in the project file, and the GitHub actions, which are named by major version (`@v4`) and are **not**
-  pinned to a commit SHA yet. The build is deterministic and carries no build-machine paths (`PathMap`). The same
+  exact version in the project file, and the GitHub actions, which are **pinned to full commit SHAs** (the major version
+  is kept beside each one as a comment only), so the workflow file alone is enough to rebuild the same exe: a moving
+  `@v4` tag can change under you, a SHA cannot. The build is deterministic and carries no build-machine paths
+  (`PathMap`). The same
   workflow then greps every `.cs` file outside `bin` and `obj`, runs the app's headless self-tests (the step prints
   `RESULT PASS n/n`; the count is deliberately not quoted in this document, because it grows with every change) and
   checks the exe's name, company, version, manifest version, `AppInfo.Version` and icon.

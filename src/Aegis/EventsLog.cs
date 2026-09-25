@@ -3,8 +3,14 @@
 // with it), same line format, same encoding:
 //   events.log  "yyyy-MM-dd HH:mm:ss  text" (two spaces), CRLF, UTF-8 (File.AppendAllText: a BOM only when the file is new)
 //   aegis.log   "yyyy-MM-dd HH:mm:ss text", CRLF, UTF-8 (Add-Content -Encoding UTF8: a BOM only when the file is new)
-// The times are formatted with the current culture like the ps1 (PORT-MAP 9.2 A-13). The ps1's tray and its -PreLaunch
-// processes appended without a lock (9.2 A-9); inside the app the writers share one lock (the file format is the same).
+// The times are written with InvariantCulture. The ps1 used the CURRENT culture (PORT-MAP 9.2 A-13) and this file was
+// ported that way, which quietly broke the one rule that matters here: "HH:mm:ss" asks Windows for the culture's TIME
+// SEPARATOR, so on a PC whose separator is not ":" the stamps came out "2026-09-26 21.04.12" (fi-FI, id-ID, ms-ID,
+// en-DK, en-FI, si-LK, bn-IN and 7 more) or "21h04h12" (oc-FR) - while Prune only ever parsed ":" stamps. On those PCs
+// NOT ONE line was ever dropped, so the player names this file holds stayed forever, against what privacy.*.md
+// promises and what AegisService's own comment says (found 2026-09-26). Prune therefore also accepts the old stamps.
+// The ps1's tray and its -PreLaunch processes appended without a lock (9.2 A-9); inside the app the writers share one
+// lock (the file format is the same).
 // SPDX-License-Identifier: GPL-3.0-or-later
 using System;
 using System.Collections.Generic;
@@ -17,6 +23,10 @@ namespace Starpocket.Client.Aegis
     {
         static readonly object Gate = new object();
 
+        /// <summary>The stamp's format. Invariant, so "HH:mm:ss" is really ":" and not the PC's time separator.</summary>
+        const string Stamp = "yyyy-MM-dd HH:mm:ss";
+        static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
+
         public static string PathIn(string stateDir) => Path.Combine(stateDir, "events.log");
 
         /// <summary>One line "yyyy-MM-dd HH:mm:ss  text" appended (Tray.AddEvent / Entry.PreLaunch). Never throws.</summary>
@@ -24,7 +34,7 @@ namespace Starpocket.Client.Aegis
         {
             lock (Gate)
             {
-                try { File.AppendAllText(PathIn(stateDir), now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + text + Environment.NewLine, Encoding.UTF8); } catch (Exception) { }
+                try { File.AppendAllText(PathIn(stateDir), now.ToString(Stamp, Inv) + "  " + text + Environment.NewLine, Encoding.UTF8); } catch (Exception) { }
             }
         }
 
@@ -33,8 +43,27 @@ namespace Starpocket.Client.Aegis
         {
             lock (Gate)
             {
-                try { File.AppendAllText(Path.Combine(stateDir, "aegis.log"), now.ToString("yyyy-MM-dd HH:mm:ss") + " " + text + "\r\n", Encoding.UTF8); } catch (Exception) { }
+                try { File.AppendAllText(Path.Combine(stateDir, "aegis.log"), now.ToString(Stamp, Inv) + " " + text + "\r\n", Encoding.UTF8); } catch (Exception) { }
             }
+        }
+
+        /// <summary>
+        /// The leading "yyyy-MM-dd HH:mm:ss", accepting ANY single character where the ":" belongs. Lines written before
+        /// this was fixed - by this app or by the ps1 that shares the file - carry the PC's own time separator there
+        /// ("21.04.12", "21h04h12"), and those are exactly the lines with the oldest player names in them, so they have to
+        /// be prunable or the bug outlives the fix. Everything else stays strict: the two digits, the dashes and the space
+        /// must be where they belong, and the parse is Invariant, so a line of text is still "unstamped".
+        /// </summary>
+        internal static bool TryStamp(string line, out DateTime t)
+        {
+            t = DateTime.MinValue;
+            if (line == null || line.Length < 19) return false;
+            char[] c = line.Substring(0, 19).ToCharArray();
+            // the two places the separator sits; anything else there is not a stamp at all
+            if (c[13] == ':' || c[16] == ':') { if (c[13] != c[16]) return false; }
+            else if (char.IsDigit(c[13]) || char.IsDigit(c[16]) || c[13] != c[16]) return false;
+            c[13] = ':'; c[16] = ':';
+            return DateTime.TryParseExact(new string(c), Stamp, Inv, System.Globalization.DateTimeStyles.None, out t);
         }
 
         /// <summary>
@@ -69,8 +98,8 @@ namespace Starpocket.Client.Aegis
                     int dropped = 0;
                     foreach (var line in lines)
                     {
-                        DateTime t = DateTime.MinValue;
-                        bool stamped = line.Length >= 19 && DateTime.TryParseExact(line.Substring(0, 19), "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out t);
+                        DateTime t;
+                        bool stamped = TryStamp(line, out t);
                         if (stamped) keepPrev = t >= limit;
                         if (keepPrev) keep.Add(line);
                         else dropped++;

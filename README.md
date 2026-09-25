@@ -103,6 +103,8 @@ exe はウィンドウのあるプログラムなので、PowerShell から呼�
 
 最後の組（`src\SelfTest\IdentitySelfTests.cs`）は、ビルドされた exe そのものを読みます: タスクマネージャーに出る名前・会社・版、exe の中のマニフェストの版（csproj と同じか）、アイコン（`RT_GROUP_ICON`）、そして `powershell.exe`・`cmd.exe`・`robocopy` などの名前が exe の中に 1 つも無いこと。
 
+配ったあとの物を「初めての人と同じ順で」試す手順は、`docs\TESTING.md` にあります（いま入っている物に触らずに試す方法）。
+
 ## UI の作り直し
 
 `ui\index.html` は、このリポジトリの中のプロトタイプ `design\launcher-proto\index.html` から作ります。プロトタイプを直したら:

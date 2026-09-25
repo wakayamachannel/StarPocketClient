@@ -634,7 +634,19 @@ namespace Starpocket.Client.SelfTest
                 Directory.Delete(Path.Combine(game, @"BepInEx\plugins\sub"), true);
                 Directory.Delete(Path.Combine(game, @"BepInEx\plugins\old"), true);
                 SelfTestRunner.Touch(Path.Combine(game, @"BepInEx\plugins\Disabled.dll_off"));
-                r.Equal("plug: \"*.dll\" also matches Disabled.dll_off (the 3-letter extension rule of GetFiles; kept, A-15)", "4 見知らぬプラグイン: Disabled.dll_off → BepInEx\\plugins から Disabled.dll_off を外してください", D(Run1("plug", game, st, none, sys)));
+                // Whether "*.dll" also matches "Disabled.dll_off" is NOT ours to decide: Win32 matches a 3-letter
+                // extension pattern against the file's SHORT (8.3) name as well, and short names can be switched off
+                // per volume. They are on for a normal user's C:, and off on the GitHub runner's disk - which is why
+                // this line failed only in CI (2026-09-25). Both answers are correct for the machine they run on, and
+                // BepInEx enumerates the same way, so the scan and the loader always agree with each other.
+                // A real .dll (Evil.dll above) is found either way; that is the check that matters.
+                {
+                    string got = D(Run1("plug", game, st, none, sys));
+                    bool 見つけた = got == "4 見知らぬプラグイン: Disabled.dll_off → BepInEx\\plugins から Disabled.dll_off を外してください";
+                    bool 見つけない = got == "2 なし（PocketRoles だけ）";
+                    r.Check("plug: Disabled.dll_off は、8.3 の短い名前が有効な PC でだけ当たる（どちらでも正しい、A-15）",
+                            見つけた || 見つけない, got);
+                }
                 File.Delete(Path.Combine(game, @"BepInEx\plugins\Disabled.dll_off"));
 
                 // 6 injection

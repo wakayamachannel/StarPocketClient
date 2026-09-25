@@ -189,6 +189,42 @@ namespace Starpocket.Client.SelfTest
                     r.Check("通らない: " + c, !Bridge.BeforeConsent.Contains(c));
             });
 
+            // 窓の無い仕事（--action / --scan-only / --verify-download）は、上の Bridge の表をまったく通りません。
+            // v1.0.0 では、そこに同意の確認が 1 つも無く、同意していない PC で --action install が
+            // BepInEx と MOD を実際に落としました（2026-09-26 のテストで判明）。第12条3項が嘘になっていました。
+            r.Test("窓の無い仕事: ネットに出るものは同意の前に断る", () =>
+            {
+                foreach (var a in new[] { "install", "check" })
+                    r.Check("断る: --action " + a, Startup.NeedsConsentFirst(StartupMode.Action, a));
+                r.Check("断る: --verify-download", Startup.NeedsConsentFirst(StartupMode.VerifyDownload, null));
+            });
+
+            r.Test("窓の無い仕事: この PC を見るだけのものは通す", () =>
+            {
+                // 断る理由がありません（何も送らない）。断ると、同意する前に「何が入っているか」を
+                // 確かめることすらできなくなります。
+                foreach (var a in new[] { "status", "report" })
+                    r.Check("通す: --action " + a, !Startup.NeedsConsentFirst(StartupMode.Action, a));
+                // --scan-only は DefinitionsStore.Load()（この PC にある定義）とゲームのフォルダを見るだけです
+                r.Check("通す: --scan-only", !Startup.NeedsConsentFirst(StartupMode.ScanOnly, null));
+                // アンインストールは、同意しなくても必ずできなければいけません（SignPath の条件）
+                r.Check("通す: --uninstall", !Startup.NeedsConsentFirst(StartupMode.Uninstall, null));
+                // 窓のある道は、ここではなく ClientApp が関所です（最初の画面を出して待ちます）
+                r.Check("通す: ふつうに開く", !Startup.NeedsConsentFirst(StartupMode.Normal, null));
+                r.Check("通す: --tray", !Startup.NeedsConsentFirst(StartupMode.Tray, null));
+            });
+
+            r.Test("断り文は 3 つの言葉ともある", () =>
+            {
+                foreach (var lang in new[] { "ja", "zh-CN", "en" })
+                {
+                    string m = S.T(lang, "cl_need_consent");
+                    r.Check(lang + ": 空でない", !string.IsNullOrWhiteSpace(m) && m != "cl_need_consent");
+                    r.Check(lang + ": どこで答えるかが書いてある", m.IndexOf("StarPocket Client", StringComparison.Ordinal) >= 0);
+                    r.Check(lang + ": 12(3) を指している", m.IndexOf("12", StringComparison.Ordinal) >= 0);
+                }
+            });
+
             r.Test("consent の 2 つは Bridge が知っている", () =>
             {
                 r.Check("consent.set", Bridge.Supported.Contains("consent.set"));

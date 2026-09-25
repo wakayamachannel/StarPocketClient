@@ -62,6 +62,13 @@ namespace Starpocket.Client
             try { ctx = ClientContext.Detect(cli, exeDir, log); }
             catch (Exception ex) { return StartFailed(log.Write, cli.Quiet, ex, ErrorBox); }
 
+            // Terms of Use Article 12(3): the ones that go online say no until the first-run screen has been answered,
+            // the same way the page's own commands are refused (Shell\Bridge.BeforeConsent). Startup.NeedsConsentFirst
+            // says which, and why each one is or is not in the list.
+            if (Startup.NeedsConsentFirst(plan.Mode, plan.Action)
+                && !Consent.Load(Consent.PathIn(ctx.DataDir)).Covers(AppInfo.TermsVersion, AppInfo.PrivacyVersion, AppInfo.RulesVersion))
+                return SayNeedConsent(ctx);
+
             // the jobs with no window at all. They are outside the "one Client" rule on purpose (SPEC 5.1): they do
             // their own work, they never hand it to a running window, and their exit code is about THIS process.
             if (plan.Mode == StartupMode.Action) return RunAction(plan, ctx);
@@ -169,6 +176,18 @@ namespace Starpocket.Client
             }
             console.Flush();
             return code;
+        }
+
+        /// <summary>The answer to a job that would go online before the first-run screen has been answered. Exit code 1,
+        /// like every other "I did not do it" from the command line, and nothing is written outward.</summary>
+        static int SayNeedConsent(ClientContext ctx)
+        {
+            var console = ConsoleOut.Open();
+            console.Write(AppInfo.Name + " " + AppInfo.Version);
+            console.Write(S.T(ctx.Lang, "cl_need_consent"));
+            console.Flush();
+            ctx.Log.Write("refused before consent (Terms 12(3))");
+            return 1;
         }
 
         /// <summary>"--action install|check|report|status" (ps1:1912-1930).</summary>

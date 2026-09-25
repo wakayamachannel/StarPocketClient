@@ -95,6 +95,30 @@ namespace Starpocket.Client.Core
         /// they take the task mutex and say "busy" instead (SPEC 5.1). status and report only read.</summary>
         public static bool ActionNeedsLock(string action) => action == "install" || action == "check";
 
+        /// <summary>
+        /// Terms of Use Article 12(3): "before you agree, the Client does not connect to the internet". The first-run
+        /// screen keeps that promise for the window - <see cref="Shell.Bridge.BeforeConsent"/> refuses every page command
+        /// that could go online - but the jobs with NO window were dispatched before any of that, and had no check of
+        /// their own. So on a PC that had never answered the screen, "--action install" downloaded BepInEx and the mod
+        /// anyway, and said "インストール完了" (found by testing the v1.0.0 build, 2026-09-26). These are the same jobs the
+        /// page is refused, so they answer the same way.
+        ///
+        /// <para>Only the jobs that really go online are asked, and the list was checked one by one rather than guessed:
+        /// "install" and "check" fetch (<see cref="Headless.Install"/>, <see cref="Headless.Check"/>), and
+        /// "--verify-download" downloads by definition. "--scan-only" does NOT - it reads the definitions that are already
+        /// on this PC (<c>new DefinitionsStore(bundledDir, stateDir).Load()</c>) and looks at the game folder, so gating it
+        /// would refuse a purely local check for no reason. "status" and "report" read THIS PC and send nothing, and
+        /// someone who has not agreed yet should still be able to see what the app found and hand over a report.
+        /// "--uninstall" is never asked either - it has to work without agreeing (first-run.md 2.2 item 8, a SignPath
+        /// condition), and it is dispatched before this is ever reached.</para>
+        /// </summary>
+        public static bool NeedsConsentFirst(StartupMode mode, string action)
+        {
+            if (mode == StartupMode.VerifyDownload) return true;
+            if (mode != StartupMode.Action) return false;
+            return action == "install" || action == "check";
+        }
+
         public static StartupPlan Plan(CommandLine cli)
         {
             var p = Decide(cli ?? CommandLine.Parse(null));

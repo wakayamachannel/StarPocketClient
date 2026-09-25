@@ -69,6 +69,26 @@ namespace Starpocket.Client
         public static extern bool QueryFullProcessImageName(IntPtr process, int flags, StringBuilder name, ref int size);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         public static extern int GetLongPathName(string shortPath, StringBuilder longPath, int size);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern int GetShortPathName(string longPath, StringBuilder shortPath, int size);
+
+        /// <summary>The path with 8.3 short folder names (C:\Users\someone\x -&gt; C:\Users\SOMEON~1\x), or null when
+        /// Windows cannot tell - the volume may have short names switched off, and then there is nothing to mask.
+        /// Used by <see cref="Core.Masking.Home"/>: a path that reached a log in its short form still names the home
+        /// folder, and masking only the long form leaves it in the report (2026-09-26).</summary>
+        public static string TryGetShortPath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+            try
+            {
+                var sb = new StringBuilder(1024);
+                int n = GetShortPathName(path, sb, sb.Capacity);
+                if (n <= 0 || n > sb.Capacity) return null;
+                string s = sb.ToString(0, n);
+                return string.Equals(s, path, StringComparison.OrdinalIgnoreCase) ? null : s;
+            }
+            catch (Exception) { return null; }
+        }
 
         /// <summary>The path with long folder names (C:\Users\SOMEON~1\x -> C:\Users\someone\x), or null when Windows
         /// cannot tell (the path is not there): the caller then keeps the path as it is.</summary>

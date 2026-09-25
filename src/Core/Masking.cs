@@ -33,12 +33,37 @@ namespace Starpocket.Client.Core
         static readonly Regex EvidenceHash = new Regex("\"hash\"\\s*:\\s*\"([0-9a-fA-F]{64})?\"", Opt);
         static readonly Regex EvidencePuid = new Regex("\"puidHash\"\\s*:\\s*\"([0-9a-fA-F]{64})?\"", Opt);
 
-        /// <summary>The home folder, wherever it appears (ps1 Mask-Text). <paramref name="userProfile"/> is %USERPROFILE%.</summary>
+        /// <summary>
+        /// The home folder, wherever it appears (ps1 Mask-Text). <paramref name="userProfile"/> is %USERPROFILE%.
+        /// <para>Both spellings go: the long one AND the 8.3 short one (C:\Users\SOMEON~1). A path can reach a log in its
+        /// short form - %TEMP% is one way - and masking only the long form left the first six letters of the account name
+        /// in the report a player hands to the author (found while testing the report zip, 2026-09-26).</para>
+        /// </summary>
         public static string Home(string text, string userProfile)
         {
             if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(userProfile)) return text;
-            try { return Regex.Replace(text, Regex.Escape(userProfile), "%USERPROFILE%", RegexOptions.IgnoreCase); }
+            try
+            {
+                text = Regex.Replace(text, Regex.Escape(userProfile), "%USERPROFILE%", RegexOptions.IgnoreCase);
+                string shortHome = ShortHome(userProfile);
+                if (!string.IsNullOrEmpty(shortHome))
+                    text = Regex.Replace(text, Regex.Escape(shortHome), "%USERPROFILE%", RegexOptions.IgnoreCase);
+                return text;
+            }
             catch (Exception) { return text; }
+        }
+
+        /// <summary>The 8.3 form of the home folder, worked out once. null when the volume has short names switched off
+        /// (then nothing was ever written that way) or when Windows will not say.</summary>
+        static string shortHomeOf, shortHomeIs;
+        static string ShortHome(string userProfile)
+        {
+            if (!string.Equals(shortHomeOf, userProfile, StringComparison.OrdinalIgnoreCase))
+            {
+                shortHomeOf = userProfile;
+                shortHomeIs = Native.TryGetShortPath(userProfile);
+            }
+            return shortHomeIs;
         }
 
         /// <summary>API keys, Discord webhook URLs and the home folder (ps1 Mask-Secrets).</summary>

@@ -52,6 +52,22 @@ namespace Starpocket.Client.SelfTest
                 const string home = @"C:\Users\someone";
                 r.Equal("the home folder", @"%USERPROFILE%\Desktop", Mask.Home(@"C:\Users\someone\Desktop", home));
                 r.Equal("... whatever its case", "%USERPROFILE%", Mask.Home(@"c:\users\SOMEONE", home));
+                // 2026-09-26: a path can reach a log in its 8.3 short form (%TEMP% is one way), and only the long form
+                // was masked - so the first six letters of the account name rode along in the report zip. This runs
+                // against the REAL home folder of whoever runs the self-test, because the short name is Windows's to
+                // decide: on a volume with short names switched off there is nothing to mask and nothing to test.
+                string realHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                string shortHome = Native.TryGetShortPath(realHome);
+                if (string.IsNullOrEmpty(shortHome))
+                    r.Info("this volume has 8.3 short names off: nothing is ever written in the short form");
+                else
+                {
+                    r.Equal("the home folder in its 8.3 short form", @"%USERPROFILE%\AppData",
+                            Mask.Home(shortHome + @"\AppData", realHome));
+                    r.Equal("... and the long form still goes", @"%USERPROFILE%\Desktop",
+                            Mask.Home(realHome + @"\Desktop", realHome));
+                    r.Check("the short form really is different", !string.Equals(shortHome, realHome, StringComparison.OrdinalIgnoreCase));
+                }
                 // The shape of a translation API key, built here from repeated digits so that no line of this file
                 // ever looks like a real key to a reader or to a secret scanner. It is not one, and it never was.
                 const string fakeKey = "11111111-2222-3333-4444-555555555555";

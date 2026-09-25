@@ -44,6 +44,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -85,8 +86,11 @@ namespace Starpocket.Client.Core
         /// <summary>The only steam:// URLs the app ever opens (the app id is the app's own constant).</summary>
         public static readonly string[] AllowedSteamUrls = { AppInfo.SteamRunGameUrl, AppInfo.SteamInstallUrl };
 
-        /// <summary>The only web pages the app ever opens in the browser.</summary>
-        public static readonly string[] AllowedWebPages = { AppInfo.WebView2DownloadPage };
+        /// <summary>The only web pages the app ever opens in the browser: Microsoft's WebView2 page, and the pages behind
+        /// the openExternal NAMES (AppInfo.ExternalPage). Built from the same constants, so a page cannot be reached here
+        /// without being reachable there - and a URL invented by the page matches nothing at all.</summary>
+        public static readonly string[] AllowedWebPages =
+            new[] { AppInfo.WebView2DownloadPage }.Concat(AppInfo.AllExternalPages()).ToArray();
 
         /// <summary>The only addresses the app ever puts in a mailto:.</summary>
         public static readonly string[] AllowedMail = { AppInfo.MailBug, AppInfo.MailRequest, AppInfo.MailHost };

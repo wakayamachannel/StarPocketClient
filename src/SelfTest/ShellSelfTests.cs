@@ -931,8 +931,9 @@ namespace Starpocket.Client.SelfTest
             string[] v01 = { "launch", "launchWindowed", "launchVanilla", "aegis.rescan", "aegis.scanOnly", "aegis.events", "openModFolder", "openLogsFolder", "openConfig", "openLog", "openReadme", "window.minimize", "window.close", "window.drag", "app.quit", "settings.set", "setLang",
                 "install", "checkUpdate", "syncSteam", "pickSteam",
                 "makeReport", "exportOne", "mailBug", "mailRequest", "openReportFolder", "shortcut.create", "uninstall",
-                "showLog", "rebuild", "devUpdate", "profile.set", "profile.pickImage", "profile.clearImage" };
-            string[] later = { "aegis.banConsole", "openExternal", "recent.clear", "player.vip", "player.restrict", "setOption", "status" };
+                "showLog", "rebuild", "devUpdate", "profile.set", "profile.pickImage", "profile.clearImage",
+                "openExternal" };   // 2026-09-26: Later から Supported へ（Discord・サイト・公開した法務ページ）
+            string[] later = { "aegis.banConsole", "recent.clear", "player.vip", "player.restrict", "setOption", "status" };
             r.Check("the app's commands", v01.All(c => Bridge.Classify(c) == Bridge.Kind.Supported), string.Join(",", v01.Where(c => Bridge.Classify(c) != Bridge.Kind.Supported)));
             r.Check("later commands", later.All(c => Bridge.Classify(c) == Bridge.Kind.Later), string.Join(",", later.Where(c => Bridge.Classify(c) != Bridge.Kind.Later)));
             r.Check("UI-only commands are unknown to the app", new[] { "media.new", "soon", "aegis.status", "headless", "cliHelp", "aegis.trayOnly", "legal.third", "", null, "LAUNCH" }.All(c => Bridge.Classify(c) == Bridge.Kind.Unknown));
@@ -1307,6 +1308,69 @@ namespace Starpocket.Client.SelfTest
                 r.Check("settings v0.1 does not store go back to their defaults (PREF_DEFAULTS from the page)", html.Contains("AEGIS_LOG, PREF_DEFAULTS, prefs,") && g.Contains("APP_SIDE"));
             });
             // v0.1.1: 起動するゲーム in Settings → PocketRoles; PLAY follows it (the page decides which command PLAY sends)
+            // 2026-09-26: 押しても何も起きないボタンが 2 つ見つかりました。最初の画面の「ブラウザで開く（準備中）」と、
+            // コミュニティの「参加する」です。後者は data-cmd="discord.invite" → EXTERNAL → openExternal でしたが、
+            // openExternal が Later のままだったので「このページはまだ用意できていません」としか言いませんでした。
+            // ページの data-cmd が、**どこかに必ず着く**ことを 1 つずつ確かめます。
+            r.Test("the UI: どの data-cmd も行き先がある（死にボタンを作らない）", () =>
+            {
+                string index = Path.Combine(ui, "index.html");
+                if (!File.Exists(index)) { r.Fail("ui files", "index.html missing"); return; }
+                string html = File.ReadAllText(index, Encoding.UTF8);
+
+                // ページが自分で処理する物（LOCAL / FLOW / EXTERNAL の鍵）
+                var page = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var name in new[] { "LOCAL", "FLOW", "EXTERNAL" })
+                {
+                    int i = html.IndexOf("const " + name + " = {", StringComparison.Ordinal);
+                    if (i < 0) { r.Check(name + " の表がある", false); continue; }
+                    // その宣言から、次の "\n};" か "};\n" まで
+                    int end = html.IndexOf("\n};", i, StringComparison.Ordinal);
+                    if (end < 0) end = Math.Min(html.Length, i + 8000);
+                    foreach (System.Text.RegularExpressions.Match m in
+                             System.Text.RegularExpressions.Regex.Matches(html.Substring(i, end - i), @"'([A-Za-z][A-Za-z0-9.]*)'\s*:"))
+                        page.Add(m.Groups[1].Value);
+                }
+                r.Check("ページ側の表が読めた（3 つ合わせて 10 件以上）", page.Count >= 10);
+
+                var dead = new List<string>();
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (System.Text.RegularExpressions.Match m in
+                         System.Text.RegularExpressions.Regex.Matches(html, @"data-cmd=""([^""]+)"""))
+                {
+                    string cmd = m.Groups[1].Value;
+                    if (!seen.Add(cmd)) continue;
+                    if (page.Contains(cmd) || Bridge.Supported.Contains(cmd) || Bridge.Later.ContainsKey(cmd)) continue;
+                    dead.Add(cmd);
+                }
+                r.Check("data-cmd を 10 個以上見つけた（正規表現が空振りしていない）", seen.Count >= 10);
+                r.Equal("行き先の無い data-cmd", "", string.Join(", ", dead));
+            });
+
+            // openExternal が渡される名前は、**全部** C# 側で住所になること（名前だけを渡す作りの要）
+            r.Test("the UI: openExternal の名前が、全部 C# で住所になる", () =>
+            {
+                string html = File.ReadAllText(Path.Combine(ui, "index.html"), Encoding.UTF8);
+                int i = html.IndexOf("const EXTERNAL = {", StringComparison.Ordinal);
+                if (i < 0) { r.Check("EXTERNAL の表がある", false); return; }
+                int end = html.IndexOf("};", i, StringComparison.Ordinal);
+                var names = new List<string>();
+                foreach (System.Text.RegularExpressions.Match m in
+                         System.Text.RegularExpressions.Regex.Matches(html.Substring(i, end - i), @"'([A-Za-z][A-Za-z0-9.]*)'\s*:"))
+                    names.Add(m.Groups[1].Value);
+                r.Check("名前が 2 つ以上ある", names.Count >= 2);
+                foreach (var n in names)
+                    foreach (var lang in new[] { "ja", "zh-CN", "en" })
+                    {
+                        string url = AppInfo.ExternalPage(n, lang);
+                        r.Check(n + " (" + lang + "): 住所になる", !string.IsNullOrEmpty(url));
+                        r.Check(n + " (" + lang + "): 開いてよい先に入っている", url != null && ShellOpen.Allowed(OpenKind.Web, url));
+                    }
+                // ページが URL を直接渡しても通らないこと（作りの要）
+                foreach (var bad in new[] { "https://example.invalid/", "discord.invite ", "", "legal.secret" })
+                    r.Check("名前でない物は通らない: <" + bad + ">", AppInfo.ExternalPage(bad, "ja") == null);
+            });
+
             r.Test("the UI: 起動するゲーム (v0.1.1)", () =>
             {
                 string js = Path.Combine(ui, "host-v01.js");

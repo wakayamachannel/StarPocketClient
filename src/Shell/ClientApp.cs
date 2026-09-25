@@ -744,6 +744,7 @@ namespace Starpocket.Client.Shell
                 case "openConfig": Reply(id, OpenInNotepad(ctx.Paths.CfgPath, S.T(ctx.Lang, "f_cfg"))); break;
                 case "openLog": Reply(id, OpenInNotepad(ctx.Paths.LogPath, S.T(ctx.Lang, "f_log"))); break;
                 case "openReadme": Reply(id, OpenInNotepad(LauncherFiles.ReadmePath(ctx.DevMode, ctx.Src, ctx.Paths.Modded, ctx.Lang), S.T(ctx.Lang, "f_readme"))); break;
+                case "openExternal": Reply(id, OpenExternal(inv.Args)); break;
                 case "window.minimize": form.WindowState = FormWindowState.Minimized; Reply(id, Bridge.Ok()); break;
                 case "window.close": Reply(id, Bridge.Ok()); Post(OnCloseButton); break;
                 case "window.drag": Reply(id, Bridge.Ok()); Post(form.BeginDrag); break;   // the move loop runs outside the WebView2 event
@@ -1233,6 +1234,22 @@ namespace Starpocket.Client.Shell
         {
             if (!GameFolders.PathExists(path)) return NotFound(what, path);
             ShellOpen.TextFile(path);
+            return Bridge.Ok();
+        }
+
+        /// <summary>
+        /// openExternal {target}: a page in the viewer's own browser. <paramref name="args"/> carries a NAME
+        /// ("discord.invite", "site", "legal.terms"…), never a URL - <see cref="AppInfo.ExternalPage"/> turns it into an
+        /// address and <see cref="ShellOpen.AllowedWebPages"/> holds exactly those addresses, so a changed page cannot
+        /// send the browser anywhere of its own choosing. The language is this app's, so 「利用規約」 opens in the language
+        /// on screen. Nothing is sent: the browser makes the connection, not this app.
+        /// </summary>
+        Dictionary<string, object> OpenExternal(Dictionary<string, object> args)
+        {
+            string target = Json.Str(args, "target");
+            string url = AppInfo.ExternalPage(target, ctx.Lang);
+            if (url == null) return Bridge.Fail("unknown target");
+            ShellOpen.WebPage(url);
             return Bridge.Ok();
         }
 

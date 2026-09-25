@@ -37,6 +37,9 @@ namespace Starpocket.Client.Shell
             "install", "syncSteam", "checkUpdate", "pickSteam",
             "aegis.rescan", "aegis.scanOnly", "aegis.events",
             "openModFolder", "openLogsFolder", "openConfig", "openLog", "openReadme",
+            // 2026-09-26: Discord の「参加する」、製品サイト、公開した利用規約・プライバシーポリシー。
+            // ページが渡すのは **名前** だけで、行き先は AppInfo.ExternalPage が決めます（URL は受け取りません）。
+            "openExternal",
             "window.minimize", "window.close", "window.drag", "app.quit",
             "settings.set", "setLang",
             "makeReport", "exportOne", "mailBug", "mailRequest", "openReportFolder",
@@ -75,7 +78,7 @@ namespace Starpocket.Client.Shell
         /// <summary>Known commands of later versions: answered with a calm "not in this version" (PORT-MAP 7.1 "知らせ").</summary>
         public static readonly Dictionary<string, string> Later = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["aegis.banConsole"] = "later", ["openExternal"] = "later",
+            ["aegis.banConsole"] = "later",   // openExternal は 2026-09-26 から Supported
             ["recent.clear"] = "later", ["player.vip"] = "later", ["player.restrict"] = "later",   // profile.set は v1.3 から Supported
             // in SPEC's list only; replaced by settings.set and the "status" event
             ["setOption"] = "replaced", ["status"] = "replaced",

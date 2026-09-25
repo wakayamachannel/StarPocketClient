@@ -300,11 +300,11 @@ window.spHostDcOnline = () => null;
    無くなったので、ここからも消えた（持ち主「動画はいいや、要らない」）。
    Labels go through data-i18n / data-i18n-attr, so a change of language keeps them. Idempotent: the settings body is
    rebuilt every time it opens and watched by a MutationObserver, which calls this again. */
-const SOON = {
-  'discord.invite': { attr:'aria-label:comm.soonDc;title:comm.soonDc' },
-  'legal.terms':    { label:'legal.termsSoon' },
-  'legal.privacy':  { label:'legal.privacySoon' }
-};
+   2026-09-26: **表は空になりました。** openExternal が本当に動くようになったからです（Bridge.Supported、
+   AppInfo.ExternalPage）。Discord も、製品サイトも、利用規約も、プライバシーポリシーも、行き先は全部
+   公開されています。ページが渡すのは名前だけで、URL は C# 側の表が決めます。
+   また押せなくする物が出てきたら、ここに名前を足してください。仕組みは残してあります。 */
+const SOON = {};
 function markSoon(root){
   for (const [cmd, s] of Object.entries(SOON)) for (const b of root.querySelectorAll('button[data-cmd="' + cmd + '"]')) {
     if (!b.disabled) b.disabled = true;
@@ -319,9 +319,10 @@ function markSoon(root){
       for (const pair of s.attr.split(';')) { const [a, k] = pair.split(':'); b.setAttribute(a, H.t(k)); }
     }
   }
-  /* the strip's count shows a dash: its tooltip must not call that "the number of people online (sample)" */
+  /* the strip's count shows a dash: its tooltip must not call that "the number of people online (sample)", and since
+     2026-09-26 it must not say Discord is coming either - Discord is up; this app simply does not ask it for a number. */
   const mini = root.querySelector('#dcMini');
-  if (mini && mini.dataset.i18nAttr !== 'title:comm.soonDc') { mini.dataset.i18nAttr = 'title:comm.soonDc'; mini.title = H.t('comm.soonDc'); }
+  if (mini && mini.dataset.i18nAttr !== 'title:comm.noCount') { mini.dataset.i18nAttr = 'title:comm.noCount'; mini.title = H.t('comm.noCount'); }
 }
 /* v1.0: the community column's lists. The prototype fills them with sample people, rooms and a Discord count; the app
    keeps none of these yet (recent.clear / player.vip / player.restrict are "later" in Bridge.cs), so it gets empty lists,

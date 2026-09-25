@@ -14,7 +14,7 @@ namespace Starpocket.Client
         /// with EACH OTHER but has no way of knowing which number this release should carry, so a stale one passes CI
         /// in silence and then names itself in the log's first line, --action's heading, the report zip and the exe's
         /// own properties (v0.4 review: all three still said 0.3.0 in the middle of v0.4).</summary>
-        public const string Version = "1.0.2";
+        public const string Version = "1.0.3";
         /// <summary>The version the UI shows in "not in this version (v0.4)" notices.</summary>
         public const string UiVersion = "1.0";
 
@@ -65,6 +65,52 @@ namespace Starpocket.Client
 
         /// <summary>Microsoft's official WebView2 page (opened only when the viewer presses the button; nothing is downloaded by the app).</summary>
         public const string WebView2DownloadPage = "https://developer.microsoft.com/microsoft-edge/webview2/";
+
+        // ---- the pages "openExternal" may open in the viewer's own browser.
+        // The page NEVER hands over a URL. It sends a NAME ("discord.invite", "site", "legal.terms"…) and this table
+        // turns it into an address, so a page that was changed - or a script talking to the window - cannot send
+        // someone's browser wherever it likes. Every one of these is also on ShellOpen.AllowedWebPages.
+        // Until 2026-09-26 openExternal was "later", so all four buttons only answered 「このページはまだ用意できていません」
+        // and host-v01.js greyed them out: 「Discord は準備中です」 while the server had been up for weeks, and
+        // 「利用規約（準備中）」 while the document was on the web.
+        public const string DiscordInvite = "https://discord.gg/ahNvRMVeHP";
+        public const string ProductSite = "https://pocketroles.starpocketgames.com/";
+        /// <summary>The published legal pages. {0} is ja / zh / en - the SITE's spelling, which is not the bundled
+        /// files' (those are ja / zh-CN / en). Checked against the live pages on 2026-09-26.</summary>
+        public const string TermsPage = "https://starpocketgames.com/terms.{0}.html";
+        public const string PrivacyPage = "https://starpocketgames.com/privacy.{0}.html";
+        public const string RulesPage = "https://starpocketgames.com/rules.{0}.html";
+
+        /// <summary>ja / zh-CN / en (the app's) -> ja / zh / en (the site's file names).</summary>
+        public static string SiteLang(string lang) => lang == "zh-CN" ? "zh" : (lang == "en" ? "en" : "ja");
+
+        /// <summary>The address behind an openExternal name, or null when the name is not one we know.</summary>
+        public static string ExternalPage(string target, string lang)
+        {
+            string s = SiteLang(lang);
+            switch (target)
+            {
+                case "discord.invite": return DiscordInvite;
+                case "site":           return ProductSite;
+                case "legal.terms":    return string.Format(TermsPage, s);
+                case "legal.privacy":  return string.Format(PrivacyPage, s);
+                case "legal.rules":    return string.Format(RulesPage, s);
+                default:               return null;
+            }
+        }
+
+        /// <summary>Every address <see cref="ExternalPage"/> can produce, for ShellOpen's allow list.</summary>
+        public static IEnumerable<string> AllExternalPages()
+        {
+            yield return DiscordInvite;
+            yield return ProductSite;
+            foreach (var s in new[] { "ja", "zh", "en" })
+            {
+                yield return string.Format(TermsPage, s);
+                yield return string.Format(PrivacyPage, s);
+                yield return string.Format(RulesPage, s);
+            }
+        }
 
         // the game the mod is built for (change together when Among Us updates)
         public const string SupportedGameVersion = "2026.8.18";

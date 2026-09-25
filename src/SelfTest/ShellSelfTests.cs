@@ -1308,6 +1308,22 @@ namespace Starpocket.Client.SelfTest
                 r.Check("settings v0.1 does not store go back to their defaults (PREF_DEFAULTS from the page)", html.Contains("AEGIS_LOG, PREF_DEFAULTS, prefs,") && g.Contains("APP_SIDE"));
             });
             // v0.1.1: 起動するゲーム in Settings → PocketRoles; PLAY follows it (the page decides which command PLAY sends)
+            // 2026-09-26: host-v01.js の中で、コメントを閉じる */ の **うしろ** に日本語の説明文を書いてしまい、
+            // ファイル全体が構文エラーになりました。すると <script> が丸ごと落ち、sp-live も付かず、
+            // **プロトタイプの見本（オンライン 128 人・架空の人名・架空のメンテナンス予告）が本物のアプリに出ました。**
+            // それが v1.0.3 と v1.0.4 で配られました。目で読んでも気づけなかったので、機械に見張らせます。
+            //
+            // 見張り方: このコードベースでは、**コードは ASCII・説明文は日本語や中国語**です。ですから
+            // 「コメントでも文字列でもない所に、かな・漢字・全角がある」= 何かが外に漏れている、と判定できます。
+            // 実際に壊れていた版に当てると、あの 4 行だけを指します（直した版は 0 件）。
+            r.Test("the UI: host-v01.js のコードの外に、説明文がはみ出していない", () =>
+            {
+                string p = Path.Combine(ui, "host-v01.js");
+                if (!File.Exists(p)) { r.Fail("ui files", "host-v01.js missing"); return; }
+                var bad = ProseOutsideCode(File.ReadAllLines(p, Encoding.UTF8));
+                r.Equal("はみ出している行", "", string.Join(" / ", bad));
+            });
+
             // 2026-09-26: 押しても何も起きないボタンが 2 つ見つかりました。最初の画面の「ブラウザで開く（準備中）」と、
             // コミュニティの「参加する」です。後者は data-cmd="discord.invite" → EXTERNAL → openExternal でしたが、
             // openExternal が Later のままだったので「このページはまだ用意できていません」としか言いませんでした。
@@ -1554,6 +1570,67 @@ namespace Starpocket.Client.SelfTest
         }
 
         /// <summary>What is between the first <paramref name="from"/> and the next <paramref name="to"/>, or "".</summary>
+        /// <summary>
+        /// Lines of a .js file that carry Japanese/Chinese text OUTSIDE a comment and outside a string - which in this
+        /// codebase means prose has escaped into the code (see the test that calls this: a "*/" in the wrong place made
+        /// the whole file a syntax error, and the app silently fell back to the prototype's sample data).
+        /// <para>Deliberately simple: comments and quoted text are cut away, then anything left that is not ASCII is a
+        /// finding. It does not try to be a JavaScript parser - it only has to be right about THIS codebase, where the
+        /// code is ASCII and only the explanations are Japanese.</para>
+        /// </summary>
+        internal static List<string> ProseOutsideCode(string[] lines)
+        {
+            var bad = new List<string>();
+            bool inBlock = false;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string s = lines[i], line = s;
+                if (inBlock)
+                {
+                    int end = line.IndexOf("*/", StringComparison.Ordinal);
+                    if (end < 0) continue;
+                    line = line.Substring(end + 2);
+                    inBlock = false;
+                }
+                // whole /* … */ pairs on this line, then a /* that runs on
+                int guard = 0;
+                while (guard++ < 64)
+                {
+                    int a = line.IndexOf("/*", StringComparison.Ordinal);
+                    if (a < 0) break;
+                    int b = line.IndexOf("*/", a + 2, StringComparison.Ordinal);
+                    if (b < 0) { line = line.Substring(0, a); inBlock = true; break; }
+                    line = line.Substring(0, a) + line.Substring(b + 2);
+                }
+                int slash = line.IndexOf("//", StringComparison.Ordinal);
+                if (slash >= 0) line = line.Substring(0, slash);
+                foreach (char q in new[] { '"', '\'', '`' }) line = CutQuoted(line, q);
+                foreach (char c in line)
+                    if (c > 0x7F && !char.IsWhiteSpace(c))
+                    {
+                        bad.Add((i + 1) + "行目: " + s.Trim());
+                        break;
+                    }
+            }
+            return bad;
+        }
+
+        /// <summary>Everything between two <paramref name="quote"/> characters removed (a backslash escapes the next one).</summary>
+        static string CutQuoted(string line, char quote)
+        {
+            var sb = new StringBuilder();
+            bool inside = false;
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+                if (inside && c == '\\') { i++; continue; }
+                if (c == quote) { inside = !inside; continue; }
+                if (!inside) sb.Append(c);
+            }
+            // an unbalanced quote would swallow the rest of the line: keep the line as it was rather than hide something
+            return inside ? line : sb.ToString();
+        }
+
         static string Between(string s, string from, string to)
         {
             int a = s.IndexOf(from, StringComparison.Ordinal);

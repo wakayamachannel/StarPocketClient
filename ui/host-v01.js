@@ -292,18 +292,14 @@ window.spHostAfterRenderPlay = () => { const el = document.getElementById('playS
 window.spHostDcOnline = () => null;
 
 /* ---------- v1.0: buttons that lead nowhere yet ----------
-   openExternal is "later" in this app (Bridge.cs), so each of these, pressed, only said 「このページはまだ用意できていません」.
-   A button that can only apologise is worse than none. These stay where they are, cannot be pressed, and say 準備中 in
-   place of what they promised: the two legal lines (planned pages; they open once they are public) and Discord (no
-   invite; its count is spHostDcOnline above).
-   2026-09-24: 動画の 2 つ（hero の「今すぐ見る」と「遊び方の動画」のカード。ここで隠す・準備中にしていた）はページ自体から
-   無くなったので、ここからも消えた（持ち主「動画はいいや、要らない」）。
-   Labels go through data-i18n / data-i18n-attr, so a change of language keeps them. Idempotent: the settings body is
-   rebuilt every time it opens and watched by a MutationObserver, which calls this again. */
-   2026-09-26: **表は空になりました。** openExternal が本当に動くようになったからです（Bridge.Supported、
-   AppInfo.ExternalPage）。Discord も、製品サイトも、利用規約も、プライバシーポリシーも、行き先は全部
-   公開されています。ページが渡すのは名前だけで、URL は C# 側の表が決めます。
-   また押せなくする物が出てきたら、ここに名前を足してください。仕組みは残してあります。 */
+   A button that can only apologise is worse than none, so a command with no destination was listed here, disabled and
+   labelled 準備中. Labels go through data-i18n / data-i18n-attr, so a change of language keeps them. Idempotent: the
+   settings body is rebuilt every time it opens and watched by a MutationObserver, which calls this again.
+   2026-09-24: 動画の 2 つ（hero の「今すぐ見る」と「遊び方の動画」のカード）はページ自体から無くなったので、ここからも
+   消えた（持ち主「動画はいいや、要らない」）。
+   2026-09-26: 表は空になりました。openExternal が本当に動くようになったからです（Bridge.Supported、
+   AppInfo.ExternalPage）。Discord も、製品サイトも、利用規約も、プライバシーポリシーも、行き先は全部公開されています。
+   ページが渡すのは名前だけで、URL は C# 側の表が決めます。また押せなくする物が出てきたら、ここに名前を足してください。 */
 const SOON = {};
 function markSoon(root){
   for (const [cmd, s] of Object.entries(SOON)) for (const b of root.querySelectorAll('button[data-cmd="' + cmd + '"]')) {

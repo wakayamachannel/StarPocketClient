@@ -1,0 +1,30 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+# self-test output folders made next to the repo by hand
+selftest-*/
+# pictures from tools\uitest\run.ps1 -Shots (made again whenever they are wanted, not carried in the history)
+shots/
+# Aegis の定義ファイル（禁止語の一覧）は公開リポジトリに入れない。リリースの添付として配る（README「Aegis」）
+aegis/definitions.txt
+aegis/definitions.txt.sig
+# オーナー用の署名申し込みチェックリストは公開リポジトリに入れない（手元の控えに置く）
+docs/SIGNPATH-STEPS.md
+# 鍵・証明書・秘密の値は履歴に入れない（2026-09-23 の時点で該当するファイルは 1 つも追跡していない。柵として置く）
+*.prkey
+*.pfx
+*.p12
+*.snk
+*.pem
+*.key
+*.cer
+*.crt
+*.jks
+.env
+report-mail.json
+*.cfg
+
+# Claude Code の作業用の設定（製品の一部ではありません）
+.claude/

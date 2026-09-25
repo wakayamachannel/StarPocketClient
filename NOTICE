@@ -1,0 +1,109 @@
+StarPocket Client - the launcher app of StarPocket Games (PocketRoles launcher and Aegis in one app)
+© 2026 StarPocket Games
+Copyright (C) 2026 the PocketRoles contributors
+
+SPDX-License-Identifier: GPL-3.0-or-later
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+The full text of the GNU General Public License version 3 is in the file
+LICENSE and at https://www.gnu.org/licenses/gpl-3.0.html
+
+----------------------------------------------------------------------
+
+Among Us disclaimer
+
+This mod is not affiliated with Among Us or Innersloth LLC, and the content contained therein is not endorsed or otherwise sponsored by Innersloth LLC. Portions of the materials contained herein are property of Innersloth LLC. © Innersloth LLC.
+
+Use of this mod on official servers is subject to Innersloth's Among Us Mod Policy:
+https://www.innersloth.com/among-us-mod-policy/
+
+The PocketRoles mod icon (ui\img\pocketroles-128.png, a crewmate) is based on Innersloth's
+design. It is a separate file next to the app for the mod's tile only; it is not part of
+"StarPocket Client.exe" or its resources. The design prototype in this repository
+(design\launcher-proto\index.html) carries the same icon embedded in the page; it is not
+shipped with the app.
+
+That icon is NOT covered by the GPL-3.0-or-later licence above. Neither the file
+ui\img\pocketroles-128.png nor the same image embedded in design\launcher-proto\index.html
+is licensed under the GPL: it is Innersloth's design and remains subject to Innersloth's
+rights and to the Among Us Mod Policy linked above.
+
+----------------------------------------------------------------------
+
+Third-party components shipped next to the exe
+
+Microsoft.Web.WebView2 1.0.3485.44 (Microsoft.Web.WebView2.Core.dll,
+Microsoft.Web.WebView2.WinForms.dll, WebView2Loader.dll)
+Copyright (C) Microsoft Corporation. All rights reserved.
+Licensed under the BSD 3-clause licence; the full text (copyright notice, conditions and
+disclaimer) is in licenses\Microsoft.Web.WebView2-LICENSE.txt, and the notices for the
+third-party material it incorporates are in
+licenses\Microsoft.Web.WebView2-NOTICE.txt (both from the NuGet package, unchanged).
+
+Feather Icons (https://feathericons.com, https://github.com/feathericons/feather)
+Copyright (c) 2013-2017 Cole Bemis
+The gear icon of the UI (<symbol id="i-gear"> in ui\index.html) is Feather's "settings" icon
+(the arcs re-encoded, the shape unchanged). Licensed under the MIT licence; the full text
+(copyright notice and permission notice) is in licenses\feather-LICENSE.txt.
+----------------------------------------------------------------------
+
+What the app installs on request (NOT shipped with it)
+
+Neither of the two items below is in this repository or in the app's own zip. The app
+downloads them only when the user presses Install / Repair / Update (never automatically),
+from the addresses written in src\AppInfo.cs, and puts them into the mod's own copy of the
+game (never into the Steam copy).
+
+BepInEx 6.0.0-be.735 (BepInEx-Unity.IL2CPP-win-x86-6.0.0-be.735+5fef357.zip)
+Licensed under the GNU Lesser General Public License v2.1 (LGPL-2.1).
+Source and licence text: https://github.com/BepInEx/BepInEx
+Downloaded from: https://builds.bepinex.dev/projects/bepinex_be/735/
+The app checks the zip's SHA-256 against the value written in src\AppInfo.cs before it
+unpacks anything (docs\BEPINEX-PIN.md).
+
+PocketRoles (the mod itself: PocketRoles.dll and the files of its release)
+Copyright (C) 2026 the PocketRoles contributors
+SPDX-License-Identifier: GPL-3.0-or-later
+Source and licence text: https://github.com/wakayamachannel/PocketRoles
+Downloaded from: that repository's GitHub Releases.
+
+----------------------------------------------------------------------
+
+StarPocket Games logo and mascot
+--------------------------------
+
+The StarPocket Games logo, the StarPocket mascot and the artwork used on the
+website are NOT covered by the GPL-3.0-or-later licence above. They are
+(c) StarPocket Games; all rights are reserved.
+
+You may build, change and share this software under the GPL. Please do not
+carry the logo or the mascot on a modified version, and do not use them on
+anything that is not ours, so that nobody mistakes a modified version for the
+official one. GPL section 7(e) allows this kind of reservation: the licence of
+the code itself is unchanged, only the marks are held back.
+
+See the Terms of Use, Article 22(2).
+
+----------------------------------------------------------------------
+
+Modified versions
+-----------------
+
+Please mark a modified version clearly as different from the official one, and
+please do not present it as our official version. This is an additional term
+under GPL section 7(c), which allows requiring that modified versions be marked
+in reasonable ways as different from the original version.
+
+It does not restrict your right to run, study, modify or redistribute the
+software. It restricts only the claim that your build is ours.
+
+See the Terms of Use, Article 9, item 3.

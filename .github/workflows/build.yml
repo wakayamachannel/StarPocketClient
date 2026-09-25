@@ -1,0 +1,148 @@
+# Builds StarPocket Client from source on a clean, public GitHub-hosted Windows runner and keeps the exe as an artifact.
+#
+# Why this file exists: SignPath Foundation's free code signing requires that the program is built from source on a
+# public CI service, so anyone can check that the signed exe matches this repository (docs\CODE-SIGNING.md).
+#   - no secrets are used and none are needed: nothing here signs, publishes or uploads anywhere but the run's artifacts
+#   - the only downloads are NuGet's (the WebView2 package, at a fixed version in the csproj) and the actions below.
+#     The actions are named by their FULL COMMIT SHA, with the major version kept beside it as a comment. A tag like
+#     "@v4" moves, so what it fetches can change without this file changing; a SHA cannot. That is what lets anyone
+#     rebuild this exact exe from this file alone (docs\CODE-SIGNING.md 2). When one of them is updated, the new SHA
+#     has to be written here by hand - that is the point, not an oversight.
+#   - the self-test runs here too, in a folder of the runner's, so a build that would fail on a player's PC fails here
+#
+# The mod's own DLL cannot be built in public CI (it needs the Among Us game files), so only the app is built here.
+name: build
+
+on:
+  push:
+    branches: ["**"]
+    # a release tag must build here too: what is released (and later what is submitted for signing) has to be the exe
+    # this workflow produced from that exact commit, not a build from someone's PC (docs\CODE-SIGNING.md 2, 3)
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4
+
+      # windows-latest already has the .NET SDK and MSBuild; this pins the SDK so a runner image change cannot
+      # quietly build with another one
+      - name: Set up the .NET SDK
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9   # v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore StarpocketClient.csproj
+
+      # ContinuousIntegrationBuild makes the build deterministic (with the PathMap in the csproj, the exe carries no
+      # path of the machine that built it)
+      - name: Build
+        run: dotnet build StarpocketClient.csproj -c Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      # No .cs file but src\Core\ShellOpen.cs may start another program. That file is the app's whole story about being
+      # a real app rather than a shell wrapper, and v0.2 had exactly this leak (notepad.exe and explorer.exe started by
+      # name from ClientApp), so it is checked here rather than trusted.
+      #
+      # v0.4 review, two holes this step used to have:
+      #   - it only knew "Process.Start(". ShellOpen itself writes "new Process { ... }" and then "p.Start()", so the
+      #     very shape the app uses could have been copied into any other file and gone straight past. "new Process"
+      #     is now listed; a bare ".Start()" is NOT, because threads and timers are started that way all over the app
+      #     and a check that cries wolf is a check people switch off.
+      #   - it only read the src folder, while this csproj takes its files by default and would build a .cs sitting at
+      #     the top of the repository just as happily. Everything but bin and obj is read now.
+      - name: No program is started outside ShellOpen
+        shell: pwsh
+        run: |
+          $allowed = "src\Core\ShellOpen.cs"
+          $pattern = 'Process\.Start\s*\(|\bnew\s+(System\.Diagnostics\.)?Process\b|\bShellExecute[AWEx]*\s*\(' +
+                     '|\bCreateProcess\w*\s*\(|\bWinExec\s*\(|EntryPoint\s*=\s*"\s*(ShellExecute|CreateProcess|WinExec)'
+          $root = (Get-Location).Path
+          $bad = @()
+          foreach ($f in Get-ChildItem -Recurse -Path "." -Filter *.cs) {
+            $rel = $f.FullName.Substring($root.Length + 1)
+            if ($rel -eq $allowed) { continue }
+            if ($rel -like "bin\*" -or $rel -like "obj\*" -or $rel -like "*\bin\*" -or $rel -like "*\obj\*") { continue }
+            foreach ($hit in (Select-String -Path $f.FullName -Pattern $pattern -AllMatches)) {
+              $bad += "$rel line $($hit.LineNumber): $($hit.Line.Trim())"
+            }
+          }
+          if ($bad.Count -gt 0) { $bad | ForEach-Object { Write-Host $_ }; throw "$($bad.Count) place(s) start a program outside $allowed" }
+          Write-Host "only $allowed starts anything (every .cs outside bin and obj was read)"
+
+      # the app's own self-test: no window, no network, no game folder - it writes only inside the folder it is given.
+      # The exe is a Windows-subsystem program, so PowerShell does NOT wait for it unless its output is piped: without
+      # the pipe this step raced ahead and a failing self-test could not turn the build red (v0.3 review).
+      - name: Self-test
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ runner.temp }}\selftest" | Out-Null
+          & ".\bin\Release\StarPocket Client.exe" --self-test "${{ runner.temp }}\selftest" | Out-Host
+          $code = $LASTEXITCODE
+          $report = "${{ runner.temp }}\selftest\self-test.txt"
+          if (-not (Test-Path $report)) { throw "the self-test wrote no report (exit $code)" }
+          Get-Content $report | Select-String "^RESULT" | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) { Get-Content $report | Select-String "^FAIL" | ForEach-Object { Write-Host $_ }; throw "the self-test failed (exit $code)" }
+
+      - name: Check the exe's identity
+        shell: pwsh
+        run: |
+          $exe = Get-Item ".\bin\Release\StarPocket Client.exe"
+          $info = $exe.VersionInfo
+          Write-Host "FileDescription: $($info.FileDescription)"
+          Write-Host "ProductName    : $($info.ProductName)"
+          Write-Host "CompanyName    : $($info.CompanyName)"
+          Write-Host "FileVersion    : $($info.FileVersion)"
+          # what Task Manager shows must be the app's own name, never a shell's (the owner's ask for this version)
+          if ($info.FileDescription -ne "StarPocket Client") { throw "FileDescription is '$($info.FileDescription)'" }
+          if ($info.CompanyName -ne "StarPocket Games") { throw "CompanyName is '$($info.CompanyName)'" }
+          # the version is the project's, and app.manifest says the same (nothing else compares those two)
+          $csproj = [xml](Get-Content "StarpocketClient.csproj")
+          $want = ($csproj.Project.PropertyGroup.FileVersion | Where-Object { $_ }) | Select-Object -First 1
+          if (-not $want) { throw "the csproj has no FileVersion" }
+          if ($info.FileVersion -ne $want) { throw "FileVersion is '$($info.FileVersion)', the csproj says '$want'" }
+          $manifest = [xml](Get-Content "app.manifest")
+          $inManifest = $manifest.assembly.assemblyIdentity.version
+          if ($inManifest -ne $want) { throw "app.manifest says '$inManifest', the csproj says '$want'" }
+          # the icon beside the name: <ApplicationIcon> must still be StarPocket icon A, and the file must be there
+          $icon = ($csproj.Project.PropertyGroup.ApplicationIcon | Where-Object { $_ }) | Select-Object -First 1
+          if ($icon -ne "assets\starpocket.ico") { throw "ApplicationIcon is '$icon'" }
+          if (-not (Test-Path $icon)) { throw "$icon is missing" }
+          # (that the icon really reached the exe is asserted by the self-test above, which reads the exe's own
+          #  RT_GROUP_ICON resource - src\SelfTest\IdentitySelfTests.cs)
+
+      # what a player would unpack: the exe with the files that must sit next to it.
+      # bin/Release/aegis/** matches nothing here: aegis\definitions.txt and .sig are not in the repository (the owner
+      # attaches them to the release instead), and if-no-files-found only fires when the whole list finds nothing.
+      - name: Upload the build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
+        with:
+          name: StarPocketClient-unsigned
+          if-no-files-found: error
+          path: |
+            bin/Release/StarPocket Client.exe
+            bin/Release/StarPocket Client.exe.config
+            bin/Release/*.dll
+            bin/Release/runtimes/**
+            bin/Release/ui/**
+            bin/Release/aegis/**
+            bin/Release/licenses/**
+            bin/Release/LICENSE
+            bin/Release/NOTICE
+
+      - name: Keep the self-test report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
+        with:
+          name: self-test
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/selftest/self-test.txt

@@ -1,0 +1,94 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    StarPocket Client (v0.4) - the app (WinForms + WebView2) with Aegis inside the same process: ONE native process that
+    Task Manager shows as "StarPocket Client" with icon A. It starts no shell and no console tool (no powershell.exe,
+    cmd.exe, robocopy, wscript, schtasks or reg.exe): the install, the file copying, the registry and the zips are done
+    in-process (src\Core\ShellOpen.cs is the only place that starts anything at all).
+    .NET Framework 4.8 (built into Windows 10 1903+ / 11): nothing to install besides the WebView2 runtime.
+    x86 like Among Us (SPEC 2): one WebView2Loader.dll, HKLM is read through RegistryView.Registry64.
+    Build: dotnet build -c Release (Windows, .NET SDK 8; README「ビルド」)   ->   bin\Release\StarPocket Client.exe
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PlatformTarget>x86</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <AssemblyName>StarPocket Client</AssemblyName>
+    <RootNamespace>Starpocket.Client</RootNamespace>
+    <ApplicationIcon>assets\starpocket.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Deterministic>true</Deterministic>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <GenerateResourceUsePreserializedResources>false</GenerateResourceUsePreserializedResources>
+
+    <!-- What Task Manager shows for a windowed app is the exe's FileDescription, which MSBuild takes from AssemblyTitle;
+         the Details tab adds the file name, ProductName and CompanyName, and the icon beside the name is the exe's first
+         icon resource (ApplicationIcon above: StarPocket icon A, never the PocketRoles crewmate - SignPath). -->
+    <AssemblyTitle>StarPocket Client</AssemblyTitle>
+    <Product>StarPocket Client</Product>
+    <Company>StarPocket Games</Company>
+    <Copyright>© 2026 StarPocket Games. GPL-3.0-or-later.</Copyright>
+    <Description>StarPocket Client</Description>
+    <NeutralLanguage>ja</NeutralLanguage>
+    <!-- these four, app.manifest's assemblyIdentity version and src\AppInfo.cs's Version move TOGETHER -->
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>portable</DebugType>
+    <!-- no path of the PC that built it inside the exe (the PDB path of the debug directory): same source, same bytes -->
+    <PathMap>$(MSBuildProjectDirectory)=C:\src\StarPocketClient</PathMap>
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- GeneratePathProperty: $(PkgMicrosoft_Web_WebView2) is the package folder (its licence texts are shipped below) -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3485.44" GeneratePathProperty="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- icon A (StarPocket Games) for the window, the tray and the taskbar badge. Never the crewmate icon (Innersloth design). -->
+    <EmbeddedResource Include="assets\starpocket.ico" LogicalName="Starpocket.Client.starpocket.ico" />
+    <!-- the UI (prototype + host-v01.js) and the licence files next to the exe -->
+    <None Update="ui\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="LICENSE;NOTICE" CopyToOutputDirectory="PreserveNewest" />
+    <!-- the licence texts of the WebView2 DLLs shipped next to the exe (BSD 3-clause: the notice goes with the binaries) -->
+    <None Include="$(PkgMicrosoft_Web_WebView2)\LICENSE.txt" Link="licenses\Microsoft.Web.WebView2-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="$(PkgMicrosoft_Web_WebView2)\NOTICE.txt" Link="licenses\Microsoft.Web.WebView2-NOTICE.txt" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <!-- the MIT text of Feather Icons: the UI's gear icon (ui\index.html, <symbol id="i-gear">) is Feather's "settings" icon -->
+    <None Update="licenses\feather-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Aegis's bundled definitions (aegis\definitions.txt + .sig, byte for byte the files of the mod's release): the floor
+         the downloaded ones never go below (PORT-MAP 3.10). The two files are NOT in the repository (the owner keeps the
+         list of names out of the public repo and attaches them to the release; .gitignore). When they sit next to this
+         csproj they are copied beside the exe; when they do not (a fresh checkout, CI), this Update matches nothing, the
+         build is unchanged and the app uses its built-in list (src\Aegis\DefinitionsStore.cs). -->
+    <None Update="aegis\definitions.txt;aegis\definitions.txt.sig" CopyToOutputDirectory="PreserveNewest" />
+    <!-- the one the owner double-clicks to run the download check (docs\BEPINEX-PIN.md step 9). It is saved as CP932,
+         and Link puts it NEXT TO the exe rather than in a tools\ folder of its own: the owner's folder holds numbered
+         .cmd files and nothing else, and this one finds the exe whether it sits beside it or in an app\ folder. -->
+    <None Update="tools\2_アプリで確かめる.cmd" CopyToOutputDirectory="PreserveNewest" Link="2_アプリで確かめる.cmd" />
+  </ItemGroup>
+
+  <!-- the WebView2 package also brings its WPF control; this app is WinForms only -->
+  <Target Name="DropUnusedWebView2Wpf" AfterTargets="Build">
+    <Delete Files="$(OutDir)Microsoft.Web.WebView2.Wpf.dll" />
+  </Target>
+
+</Project>

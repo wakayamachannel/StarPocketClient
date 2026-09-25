@@ -1,0 +1,95 @@
+
+/* ===== 最初の同意の画面（first-run.md ①） =====================================
+   窓いっぱいの重ね画面。設定の重ね画面と同じ紺の --set-* を使います（SPEC 8 章）。
+   後ろの本体は inert にするので、Tab でうしろへ抜けられません。
+   ここが閉じるまで、アプリはネットに一切つながりません（利用規約 第12条3項）。 */
+#firstrun{position:fixed;inset:0;z-index:120;display:none;background:var(--set-bg,#1C1D2A);color:var(--set-fg,#EDEEF5)}
+#firstrun[data-open]{display:grid;grid-template-rows:auto 1fr auto}
+#firstrun *{box-sizing:border-box}
+
+.fr-top{display:flex;align-items:center;gap:12px;padding:14px 22px;border-bottom:1px solid var(--set-line,#2C2E42)}
+.fr-step{font-weight:800;letter-spacing:.04em;font-size:13px;opacity:.75}
+.fr-langs{margin-left:auto;display:flex;gap:6px}
+.fr-langs button{background:transparent;border:1px solid var(--set-line,#2C2E42);color:inherit;border-radius:8px;
+  padding:5px 11px;font:inherit;font-size:12px;cursor:pointer}
+.fr-langs button[aria-pressed="true"]{background:var(--set-on-btn,#2EC4B6);border-color:transparent;color:#0F1020;font-weight:800}
+.fr-langs button:focus-visible{outline:2px solid var(--set-on-btn,#2EC4B6);outline-offset:2px}
+
+.fr-body{overflow:auto;padding:22px;display:grid;gap:18px;align-content:start;
+  grid-template-columns:minmax(0,1fr);max-width:1080px;width:100%;margin:0 auto}
+.fr-title{margin:0;font-size:22px;font-weight:900;letter-spacing:.01em}
+.fr-lead{margin:0;opacity:.85;font-size:14px}
+.fr-again{margin:0;padding:10px 14px;border-radius:10px;background:rgba(247,197,72,.12);
+  border:1px solid rgba(247,197,72,.4);font-size:13px}
+
+.fr-sum{margin:0;padding:14px 16px 14px 32px;border-radius:12px;background:rgba(255,255,255,.04);
+  border:1px solid var(--set-line,#2C2E42);display:grid;gap:7px;font-size:13px;line-height:1.65}
+.fr-sum li{margin:0}
+
+.fr-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.fr-tabs button{background:transparent;border:1px solid var(--set-line,#2C2E42);color:inherit;border-radius:10px 10px 0 0;
+  padding:8px 14px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;border-bottom-color:transparent}
+.fr-tabs button[aria-selected="true"]{background:rgba(255,255,255,.06);border-bottom-color:transparent}
+.fr-tabs button:focus-visible{outline:2px solid var(--set-on-btn,#2EC4B6);outline-offset:2px}
+
+.fr-doc{border:1px solid var(--set-line,#2C2E42);border-radius:0 12px 12px 12px;background:rgba(0,0,0,.18)}
+.fr-doctext{height:min(38vh,340px);overflow:auto;padding:16px 18px;margin:0;font-size:12.5px;line-height:1.75;
+  white-space:pre-wrap;word-break:break-word;font-family:inherit}
+.fr-docfoot{display:flex;align-items:center;gap:10px;padding:9px 14px;border-top:1px solid var(--set-line,#2C2E42);font-size:12px;opacity:.85}
+.fr-docfoot .fr-open{margin-left:auto;background:transparent;border:0;color:var(--set-on-btn,#2EC4B6);font:inherit;
+  font-size:12px;cursor:pointer;text-decoration:underline;padding:2px 4px}
+
+/* 任意の 2 つ（チャット翻訳・自動の通報）。ほかと見分けがつくよう枠で囲みます */
+.fr-opt{border:1px solid var(--set-line,#2C2E42);border-radius:12px;padding:14px 16px;display:grid;gap:7px}
+.fr-opt label{display:flex;gap:10px;align-items:flex-start;font-weight:700;font-size:13.5px;cursor:pointer}
+.fr-opt p{margin:0;font-size:12.5px;line-height:1.7;opacity:.85}
+.fr-opt .fr-when{display:none;margin:0;font-size:12.5px;line-height:1.7;padding:8px 11px;border-radius:8px;
+  background:rgba(247,197,72,.1);border:1px solid rgba(247,197,72,.35)}
+.fr-opt[data-on] .fr-when{display:block}
+
+.fr-agree{display:grid;gap:7px;padding:14px 16px;border-radius:12px;
+  background:rgba(46,196,182,.08);border:1px solid rgba(46,196,182,.35)}
+.fr-agree label{display:flex;gap:10px;align-items:flex-start;font-weight:800;font-size:14px;cursor:pointer}
+.fr-minor{margin:0;font-size:12.5px;opacity:.85;padding-left:28px}
+.fr-need{margin:0;padding-left:28px;font-size:12.5px;font-weight:700;color:#FF8A8A;display:none}
+.fr-agree[data-need] .fr-need{display:block}
+
+#firstrun input[type="checkbox"]{width:18px;height:18px;flex:0 0 auto;margin:1px 0 0;accent-color:var(--set-on-btn,#2EC4B6);cursor:pointer}
+
+.fr-bottom{display:flex;align-items:center;gap:12px;padding:14px 22px;border-top:1px solid var(--set-line,#2C2E42)}
+.fr-uninst{background:transparent;border:0;color:inherit;opacity:.6;font:inherit;font-size:12px;cursor:pointer;
+  text-decoration:underline;padding:4px 6px}
+.fr-uninst:hover{opacity:.9}
+.fr-btns{margin-left:auto;display:flex;gap:10px}
+.fr-btns button{font:inherit;font-size:14px;font-weight:800;border-radius:10px;padding:10px 22px;cursor:pointer}
+.fr-no{background:transparent;border:1px solid var(--set-line,#2C2E42);color:inherit}
+.fr-yes{background:var(--set-on-btn,#2EC4B6);border:1px solid transparent;color:#0F1020}
+.fr-yes[aria-disabled="true"]{opacity:.45;cursor:default}
+.fr-btns button:focus-visible,.fr-uninst:focus-visible{outline:2px solid var(--set-on-btn,#2EC4B6);outline-offset:2px}
+
+/* 「同意しない」の確認（SPEC 9.6 の確認のダイアログと同じ形） */
+#frAsk{position:fixed;inset:0;z-index:130;display:none;place-items:center;background:rgba(6,7,16,.62)}
+#frAsk[data-open]{display:grid}
+.fr-ask{width:min(560px,92vw);background:var(--set-bg,#1C1D2A);color:var(--set-fg,#EDEEF5);
+  border:1px solid var(--set-line,#2C2E42);border-radius:16px;padding:22px;display:grid;gap:14px;
+  box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.fr-ask h2{margin:0;font-size:17px;font-weight:900}
+.fr-ask p{margin:0;font-size:13px;line-height:1.75;opacity:.9}
+.fr-ask .fr-askbtns{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.fr-ask button{font:inherit;font-size:13.5px;font-weight:800;border-radius:10px;padding:9px 18px;cursor:pointer}
+.fr-back{background:var(--set-on-btn,#2EC4B6);border:1px solid transparent;color:#0F1020}
+.fr-quit,.fr-ask .fr-uninst2{background:transparent;border:1px solid var(--set-line,#2C2E42);color:inherit}
+.fr-ask button:focus-visible{outline:2px solid var(--set-on-btn,#2EC4B6);outline-offset:2px}
+
+@media (max-width:760px){
+  .fr-body{padding:16px}
+  .fr-doctext{height:min(34vh,260px)}
+  .fr-bottom{flex-wrap:wrap}
+  .fr-btns{width:100%;justify-content:flex-end}
+}
+
+/* 文書が読めなかった時の警告。出ている間は同意のチェックも押せません */
+.fr-docwarn{margin:8px 0 0;color:#B3261E;font-weight:600;line-height:1.55}
+.fr-docwarn:focus{outline:2px solid currentColor;outline-offset:2px}
+.fr-agree input:disabled + span{opacity:.55}
+.fr-open:disabled{opacity:.5;cursor:default}

@@ -1,0 +1,82 @@
+
+<!-- ===== 最初の同意の画面（first-run.md ①） =====================================
+     ここが閉じるまで、アプリはネットに一切つながりません（利用規約 第12条3項）。
+     出すかどうかを決めるのはアプリ側です（"shell" イベントの firstRun）。
+     ページ側で勝手に閉じても、アプリは Bridge.BeforeConsent の外の命令を断り続けます。 -->
+<div id="firstrun" role="dialog" aria-modal="true" aria-labelledby="frTitle" hidden>
+  <div class="fr-top">
+    <span class="fr-step" id="frStep">はじめに</span>
+    <div class="fr-langs" id="frLangs" role="group" aria-label="言語">
+      <button type="button" data-frlang="ja" aria-pressed="true">日本語</button>
+      <button type="button" data-frlang="zh" aria-pressed="false">中文</button>
+      <button type="button" data-frlang="en" aria-pressed="false">English</button>
+    </div>
+  </div>
+
+  <div class="fr-body">
+    <h1 class="fr-title" id="frTitle">利用規約とプライバシーポリシー</h1>
+    <p class="fr-lead" id="frLead">StarPocket Client を使う前に、読んで同意してください。</p>
+    <p class="fr-again" id="frAgain" hidden>大事なところが変わりました。もう一度読んで、同意をお願いします。</p>
+
+    <ul class="fr-sum" id="frSum"></ul>
+
+    <div>
+      <div class="fr-tabs" role="tablist" id="frTabs" aria-label="文書">
+        <button type="button" role="tab" id="frTab-terms"   data-frdoc="terms"   aria-selected="true"  aria-controls="frDocText">利用規約</button>
+        <button type="button" role="tab" id="frTab-privacy" data-frdoc="privacy" aria-selected="false" aria-controls="frDocText" tabindex="-1">プライバシーポリシー</button>
+        <button type="button" role="tab" id="frTab-rules"   data-frdoc="rules"   aria-selected="false" aria-controls="frDocText" tabindex="-1">遊び方のルール</button>
+      </div>
+      <div class="fr-doc">
+        <div class="fr-doctext" id="frDocText" role="tabpanel" tabindex="0" aria-labelledby="frTab-terms"></div>
+        <div class="fr-docfoot">
+          <span id="frVer"></span>
+          <button type="button" class="fr-open" id="frOpen">ブラウザで開く ›</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- チャット翻訳（最初はオフ。プライバシーポリシー 3.9） -->
+    <div class="fr-opt" id="frTrBox">
+      <label><input type="checkbox" id="frTr"><span id="frTrLabel">チャット翻訳を使う</span></label>
+      <p id="frTrLine"></p>
+      <p class="fr-when" id="frTrWhen"></p>
+      <p id="frTrLater"></p>
+    </div>
+
+    <!-- チートの自動通報（最初はオフ。オーナーの決定 D-40） -->
+    <div class="fr-opt" id="frArBox">
+      <label><input type="checkbox" id="frAr"><span id="frArLabel">チートで部屋から出した人を、Innersloth に自動で通報する</span></label>
+      <p id="frArLine"></p>
+      <p class="fr-when" id="frArWhen"></p>
+      <p id="frArLater"></p>
+    </div>
+
+    <div class="fr-agree" id="frAgreeBox">
+      <label><input type="checkbox" id="frAgree"><span id="frAgreeLabel">利用規約とプライバシーポリシーを読んで、同意します</span></label>
+      <p class="fr-minor" id="frMinor"></p>
+      <p class="fr-need" id="frNeed"></p>
+      <!-- 3 本の文書のどれかが読めなかった時だけ出ます。出ている間は同意できません -->
+      <p class="fr-docwarn" id="frDocWarn" role="alert" tabindex="-1" hidden></p>
+    </div>
+  </div>
+
+  <div class="fr-bottom">
+    <button type="button" class="fr-uninst" id="frUninstall">アンインストール</button>
+    <div class="fr-btns">
+      <button type="button" class="fr-no" id="frDecline">同意しない</button>
+      <button type="button" class="fr-yes" id="frAccept" aria-disabled="true">同意する</button>
+    </div>
+  </div>
+</div>
+
+<div id="frAsk" role="dialog" aria-modal="true" aria-labelledby="frAskTitle" hidden>
+  <div class="fr-ask">
+    <h2 id="frAskTitle">同意しないで、Client を閉じますか？</h2>
+    <p id="frAskBody"></p>
+    <div class="fr-askbtns">
+      <button type="button" class="fr-back" id="frAskBack">戻る</button>
+      <button type="button" class="fr-quit" id="frAskQuit">Client を閉じる</button>
+      <button type="button" class="fr-uninst2" id="frAskUninstall">アンインストール</button>
+    </div>
+  </div>
+</div>

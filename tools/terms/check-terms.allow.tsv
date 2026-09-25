@@ -1,0 +1,2 @@
+# check-terms.ps1 -Allow: 相対パスの一部<TAB>言い方<TAB>行に含まれる文字<TAB>理由
+docs\PORT-MAP.md			直す前の言葉を引用している（9.3 の表・7.3 の手順）

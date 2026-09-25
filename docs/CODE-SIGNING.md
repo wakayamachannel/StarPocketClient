@@ -141,10 +141,23 @@ Steam と Steam 版の Among Us には、いかなる場合も触りません（
 
 作者の PC では、MOD 本体を作り直すボタンが出ます。コンパイルだけはアプリの中でできないので、ここだけ .NET SDK の `dotnet.exe` を起動します（`src\Core\ShellOpen.cs` の `OpenKind.Build`・`RunBuild`、`src\Core\DevBuild.cs`）。
 
-**配布する Release の exe は、この道に入れません。** v0.4 のレビューまではそうではありませんでした。`--source-dir` が配布する exe にも残っていて、しかも exe の 4 階層上まで `PocketRoles.csproj` という名前のファイルを探していたので、その名前のファイルが入ったフォルダを指すだけで、誰の PC でも開発モードになりました。今は 2 つとも閉じてあります。
+v0.4 のレビューまでは、**誰の PC でもこの道に入れました**。`--source-dir` が配布する exe にも残っていて、しかも exe の 4 階層上まで `PocketRoles.csproj` という名前のファイルを探していたので、その名前のファイルが入ったフォルダを指すだけで開発モードになりました。今は 2 つとも閉じてあります。
 
 - `--source-dir` は**開発者用のビルド（DEBUG）にしかありません**。Release の exe にこの指定を書くと「分からない指定があります」と出て、終了コード 1 で終わります（黙って無視はしません）。
 - exe の**上のフォルダを探すのをやめました**。ソースとして使えるのは exe と同じフォルダだけです。そこにファイルを置ける人は、exe そのものを差し替えられる人です。
+
+**配布する exe でこの道に入る方法は、1 つだけあります**（v1.1 で足しました。この節は 2026-09-26 まで「入れません」と書いたままで、実態と違っていました）。次の **3 つが全部そろった時だけ**です。
+
+1. 利用者が、アプリの中の設定（**設定 → PocketRoles → 開発**）でスイッチを入れる。または自分の `%LOCALAPPDATA%` の `settings.json` に `"devBuild": true` と書く
+2. そのフォルダが、**`PocketRoles.csproj` と `PocketRolesLauncher.ps1` の両方**を持っている（片方だけのフォルダは通りません。v0.4 で問題になった形がこれです）
+3. そのフォルダが、次のどれかである
+   - **利用者がアプリの中のフォルダ選択で選んだ場所**（v1.4。`settings.json` の `"devSource"`。書くのは `pickModSource` だけで、それは**その場で開く Windows のフォルダ選択**です）
+   - 自分のデスクトップの `PocketRoles.lnk` が指すフォルダ
+   - 自分のデスクトップの `HostRoles`
+
+**引数・ページ・外のファイルからは指定できません。** コマンドラインにこのフォルダを渡す方法はなく、画面の中の JavaScript も場所を渡しません（`pickModSource` という**命令の名前だけ**を送ります）。設定ファイルに書ける人は、同じ場所にある「スタートアップ」フォルダにも書ける人です。**署名済みの exe が、その人に新しい力を与えることはありません。**
+
+v1.4 でフォルダ選択を足したのは、作業コピーをデスクトップの外に置くと開発モードが黙って消えていたためです（持ち主、2026-09-26）。**通す条件は 1 つも緩めていません。**場所の決め方が「固定の 2 か所」から「利用者が選んだ 1 か所＋固定の 2 か所」に増えただけです。
 
 正直に書いておくこと: **`dotnet build` は MSBuild を通すので、プロジェクトファイル（`.csproj`）に書かれていれば、別のプログラムを起動しえます。** つまりこの道は「`dotnet.exe` だけを起動する」ではなく「作者のプロジェクトファイルに書いてあることを行う」道です。だから配布する exe からは道ごと外してあります。
 
@@ -215,11 +228,18 @@ PowerShell scripts with one native Windows app, so it shows in Task Manager unde
   copying, zip extraction and registry work are all done in-process. `src/Core/ShellOpen.cs` is the only file that
   starts anything at all, against a fixed allow-list; CI fails the build if any other source file starts a program, and
   the self-test fails if those program names appear anywhere in the built exe. The app has no self-update mechanism.
-- **Developer mode is not in the released build.** On the author's own machine a DEBUG build shows a "rebuild the mod"
-  button that starts the .NET SDK's `dotnet.exe`, because compiling is the one thing the app cannot do inside itself.
-  A Release build - the one that is published and submitted for signing - cannot reach it: `--source-dir` exists only
-  in a DEBUG build (a Release build answers "this is not an option of this app" and exits 1), and the search for the
-  mod's project file in folders above the exe has been removed, so the only possible source folder is the exe's own.
+- **Developer mode is off by default and cannot be switched on from outside the app.** A "rebuild the mod" button
+  starts the .NET SDK's `dotnet.exe`, because compiling is the one thing the app cannot do inside itself. Nothing a
+  caller hands the exe can reach it: `--source-dir` exists only in a DEBUG build (a Release build answers "this is not
+  an option of this app" and exits 1), and the search for the mod's project file in folders above the exe has been
+  removed. In a released build there is exactly one way in, and it needs all three of: the person turning the switch on
+  inside the app (Settings → PocketRoles → 開発, or `"devBuild": true` in their own `settings.json`); a folder holding
+  BOTH `PocketRoles.csproj` and `PocketRolesLauncher.ps1` (a lone project file - the v0.4 shape - is refused); and that
+  folder being one they chose in the app's own folder dialog (`"devSource"`, written only by `pickModSource`), or their
+  Desktop's `PocketRoles.lnk` target, or `<Desktop>\HostRoles`. The page never passes a path - it sends the name of the
+  command and nothing else - and whoever can write those settings can already write the Startup folder beside them.
+  (Until 2026-09-26 this paragraph said a released build could not reach developer mode at all; that stopped being
+  true in v1.1 and the text had not caught up.)
   We say plainly why that matters: `dotnet build` runs MSBuild, and a project file can tell MSBuild to start other
   programs, so this path is "do what the author's project file says", not "start `dotnet.exe` and nothing else". In
   the author's build it is still fenced: an absolute path whose file name is `dotnet.exe`, three fixed arguments

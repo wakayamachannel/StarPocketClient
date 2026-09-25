@@ -76,7 +76,8 @@ namespace Starpocket.Client.Core
             // PORT-MAP 3.2 as before: the exe's own folder (or --source-dir in a developer build) - then, v1.1, the
             // switch in Settings together with the working copy found on this PC (src\Core\DevSource.cs)
             string exeSource = GameFolders.ResolveSource(cli.SourceDir, exeDir);
-            c.DevFolder = DevSource.Find(c.Desktop, shortcut);
+            // v1.4: the folder chosen in Settings comes first, then the two fixed places (DevSource.Candidates)
+            c.DevFolder = DevSource.Find(c.Desktop, shortcut, c.Settings.DevSourcePath);
             var pick = DevSource.Choose(exeSource, GameFolders.IsDevMode(false, exeSource), cli.Friend, c.Settings.DevBuild, c.DevFolder);
             c.Src = pick.Src;
             c.DevMode = pick.DevMode;

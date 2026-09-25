@@ -112,6 +112,18 @@ namespace Starpocket.Client.Core
 
         public void SetDevBuild(bool on) => DevBuild = on;
 
+        /// <summary>
+        /// v1.4: the author's working copy, chosen with the folder dialog in Settings → PocketRoles → 開発
+        /// (the owner, 2026-09-26 「特定のフォルダからやらないといけないのめんどくさい」). Until v1.3 the folder had to be
+        /// on the Desktop, so moving it turned developer mode off with nothing said.
+        /// <para>Written ONLY by "pickModSource", which is a dialog the person opened themselves, and only after
+        /// <see cref="DevSource.IsDevFolder"/> said yes. It is read back beside <see cref="DevBuild"/>, which still has
+        /// to be on: whoever can write this line can write that one, and the Startup folder is next door.</para>
+        /// </summary>
+        public string DevSourcePath { get; private set; } = "";
+
+        public void SetDevSourcePath(string path) => DevSourcePath = path ?? "";
+
         /// <summary>v1.3: フレンド欄のプロフィールの名前（ページの profile.set が持ってくる）。16 文字まで、制御文字は除く。
         /// 空でない間だけ settings.json に書く。</summary>
         public string ProfileName { get; private set; } = "";
@@ -212,6 +224,9 @@ namespace Starpocket.Client.Core
                     else if (kv.Key == "sound") s.Sound = !(kv.Value is bool quiet && !quiet);       // v1.2: the same rule
                     else if (kv.Key == "volume") { int v; if (TryVolume(kv.Value, out v) && IsValidVolume(v)) s.Volume = v; }
                     else if (kv.Key == "devBuild") s.DevBuild = kv.Value is bool dev && dev;         // only a real true turns it on
+                    // v1.4: a string only, and it still has to pass DevSource.IsDevFolder every start - this line is a
+                    // remembered answer, never a permission on its own
+                    else if (kv.Key == "devSource") { var v = kv.Value as string; if (v != null) s.DevSourcePath = v; }
                     else if (kv.Key == "profileName") { var v = kv.Value as string; if (v != null) s.ProfileName = CleanProfileName(v); }   // v1.3: string のみ
                     else if (kv.Key == "profileAvatar") { int v; if (TryVolume(kv.Value, out v) && v >= 0 && v < AvatarCount) s.ProfileAvatar = v; }   // v1.3: 0〜5 のみ
                     else s.other[kv.Key] = kv.Value;
@@ -233,6 +248,7 @@ namespace Starpocket.Client.Core
             if (!Sound) obj["sound"] = false;
             if (Volume != DefaultVolume) obj["volume"] = Volume;
             if (DevBuild) obj["devBuild"] = true;
+            if (DevSourcePath.Length > 0) obj["devSource"] = DevSourcePath;   // v1.4
             if (ProfileName.Length > 0) obj["profileName"] = ProfileName;   // v1.3
             if (ProfileAvatar != 0) obj["profileAvatar"] = ProfileAvatar;
             foreach (var kv in other) obj[kv.Key] = kv.Value;

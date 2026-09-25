@@ -2,7 +2,7 @@
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
   <!-- the version here must be the csproj's FileVersion; SelfTest\IdentitySelfTests.cs reads this manifest out of the
        built exe and fails when the two drift apart -->
-  <assemblyIdentity version="1.0.5.0" name="StarPocketGames.Client" type="win32" />
+  <assemblyIdentity version="1.1.0.0" name="StarPocketGames.Client" type="win32" />
   <description>StarPocket Client</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>

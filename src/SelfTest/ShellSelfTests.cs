@@ -238,6 +238,24 @@ namespace Starpocket.Client.SelfTest
                 r.Equal("a shortcut into a folder with only a project file is passed over", hr, DevSource.Find(desk, p => Path.Combine(elsewhere, "a.cmd")));
                 r.Check("a shortcut that points nowhere is passed over", DevSource.Find(desk, p => "") == hr);
 
+                // v1.4: the folder picked in Settings (settings.json "devSource"). It is looked at FIRST, and it has to
+                // pass the same IsDevFolder as the two fixed places - a line in settings.json is a remembered answer,
+                // never a permission of its own (the owner, 2026-09-26: the working copy could not live off the Desktop).
+                string moved = Path.Combine(root, @"D\work\HostRoles");
+                SelfTestRunner.Touch(Path.Combine(moved, "PocketRoles.csproj"));
+                SelfTestRunner.Touch(Path.Combine(moved, "PocketRolesLauncher.ps1"));
+                r.Equal("選んだフォルダが最優先（デスクトップの外でもよい）", moved, DevSource.Find(desk, noLnk, moved));
+                r.Equal("選んだフォルダが shortcut より先", moved, DevSource.Find(desk, lnk, moved));
+                string half = Path.Combine(root, "Half");
+                SelfTestRunner.Touch(Path.Combine(half, "PocketRoles.csproj"));
+                r.Equal("片方しか無いフォルダは選んでも通らない（今までの場所に落ちる）", hr, DevSource.Find(desk, noLnk, half));
+                r.Equal("無いフォルダを選んでも落ちない", hr, DevSource.Find(desk, noLnk, Path.Combine(root, "NoSuchFolder")));
+                r.Equal("空なら今までどおり", hr, DevSource.Find(desk, noLnk, ""));
+                r.Check("デスクトップが無くても、選んだフォルダだけで見つかる", DevSource.Find(null, noLnk, moved) == moved);
+                // the switch still has to be on: the picked folder alone is not developer mode
+                r.Check("選んでもスイッチが off なら開発モードにならない",
+                        !DevSource.Choose(Path.Combine(root, "exe0"), false, false, false, moved).DevMode);
+
                 // the one decision, with nothing on disk
                 string exe = Path.Combine(root, "exe");
                 DevChoice C(bool exeIsSource, bool friend, bool setting, string folder) => DevSource.Choose(exe, exeIsSource, friend, setting, folder);

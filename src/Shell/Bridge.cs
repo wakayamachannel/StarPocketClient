@@ -35,6 +35,7 @@ namespace Starpocket.Client.Shell
         {
             "launch", "launchWindowed", "launchVanilla",
             "install", "syncSteam", "checkUpdate", "pickSteam",
+            "pickModSource",   // v1.4: 開発モードのソースのフォルダを選ぶ（作者の PC だけ。ClientApp.PickModSource）
             "aegis.rescan", "aegis.scanOnly", "aegis.events",
             "openModFolder", "openLogsFolder", "openConfig", "openLog", "openReadme",
             // 2026-09-26: Discord の「参加する」、製品サイト、公開した利用規約・プライバシーポリシー。

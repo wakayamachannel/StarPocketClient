@@ -720,6 +720,7 @@ namespace Starpocket.Client.Shell
                 case "syncSteam": DoTask(id, cmd, i => i.SyncGameCopy()); break;
                 case "checkUpdate": DoTask(id, cmd, i => i.CheckUpdate(Json.Bool(inv.Args, "install"))); break;
                 case "pickSteam": Reply(id, PickSteam()); break;
+                case "pickModSource": Reply(id, PickModSource()); break;   // v1.4: 開発モードのソースのフォルダ
                 case "aegis.rescan": RunScan(false, r => Reply(id, r)); break;
                 case "aegis.scanOnly": RunScan(true, r => Reply(id, r)); break;
                 case "aegis.events": Reply(id, OpenInNotepad(aegis.EventsLogPath, "events.log")); break;
@@ -1251,6 +1252,39 @@ namespace Starpocket.Client.Shell
             if (url == null) return Bridge.Fail("unknown target");
             ShellOpen.WebPage(url);
             return Bridge.Ok();
+        }
+
+        /// <summary>
+        /// v1.4 pickModSource: the author points at their own working copy of the mod, with the same folder dialog as
+        /// <see cref="PickSteam"/> (the owner, 2026-09-26 「特定のフォルダからやらないといけないのめんどくさい」 - until now it
+        /// had to be &lt;Desktop&gt;\HostRoles or behind a Desktop shortcut, and moving it turned developer mode off with
+        /// nothing said).
+        /// <para>What keeps this from being the door the v0.4 review closed: the folder comes from a dialog THIS person
+        /// opened just now - not an argument, not a page, not a file - and it is taken only when
+        /// <see cref="DevSource.IsDevFolder"/> says the working copy really is there (both PocketRoles.csproj and
+        /// PocketRolesLauncher.ps1). It is remembered in their own settings.json beside the switch that still has to be
+        /// on, so it needs no trust the switch did not already need. The mode itself is settled once at start
+        /// (ClientContext.Detect), so this takes effect the next time the app is opened - said in the reply.</para>
+        /// </summary>
+        Dictionary<string, object> PickModSource()
+        {
+            string picked;
+            using (var dlg = new FolderBrowserDialog { Description = S.T(ctx.Lang, "dev_pick"), ShowNewFolderButton = false })
+            {
+                if (dlg.ShowDialog(form) != DialogResult.OK) return Bridge.Fail("");
+                picked = dlg.SelectedPath;
+            }
+            if (!DevSource.IsDevFolder(picked))
+                return Bridge.Fail(S.T(ctx.Lang, "dev_pick_bad"));
+            ctx.Settings.SetDevSourcePath(picked);
+            try { ctx.Settings.Save(ctx.SettingsPath); }
+            catch (Exception ex) { ctx.Log.Write("devSource: could not save: " + ex.Message); return Bridge.Fail(ex.Message); }
+            ctx.Log.Write("devSource: " + picked);
+            return Bridge.Ok(new Dictionary<string, object>
+            {
+                ["path"] = picked,
+                ["message"] = S.T(ctx.Lang, "dev_pick_ok", picked),
+            });
         }
 
         /// <summary>The folder in the viewer's file manager (openModFolder does not check that it exists, like the launcher).</summary>

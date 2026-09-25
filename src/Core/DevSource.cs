@@ -54,10 +54,22 @@ namespace Starpocket.Client.Core
             && GameFolders.PathExists(GameFolders.Join(dir, ProjectFile))
             && GameFolders.PathExists(GameFolders.Join(dir, LegacyLauncher.ScriptName));
 
-        /// <summary>The folders looked at, in order: each Desktop shortcut's target folder, then &lt;Desktop&gt;\HostRoles.
-        /// A shortcut that cannot be read is skipped, never an error.</summary>
-        public static IEnumerable<string> Candidates(string desktop, Func<string, string> readShortcut)
+        /// <summary>
+        /// The folders looked at, in order: the folder the author PICKED in Settings (v1.4), then each Desktop
+        /// shortcut's target folder, then &lt;Desktop&gt;\HostRoles. A shortcut that cannot be read is skipped, never
+        /// an error, and every candidate still has to pass <see cref="IsDevFolder"/>.
+        /// <para>v1.4 added the picked folder because the two fixed places were too strict to live with: the working
+        /// copy had to sit on the Desktop, and moving it turned developer mode off with no explanation (the owner,
+        /// 2026-09-26: 「特定のフォルダからやらないといけないのめんどくさい」). It does NOT reopen what the v0.4 review
+        /// closed. That door was an ARGUMENT (--source-dir) plus a search of the folders above the exe, so a shortcut,
+        /// a URL handler or another program could hand the signed exe a folder. This one is written only by
+        /// "pickModSource", which is a folder dialog the person opened themselves, and it is kept in their own
+        /// settings.json - the same place, and the same threat model, as the switch that has to be on beside it.
+        /// </para>
+        /// </summary>
+        public static IEnumerable<string> Candidates(string desktop, Func<string, string> readShortcut, string picked = null)
         {
+            if (!string.IsNullOrEmpty(picked)) yield return picked;
             if (string.IsNullOrEmpty(desktop)) yield break;
             foreach (var name in ShortcutNames)
             {
@@ -72,12 +84,13 @@ namespace Starpocket.Client.Core
             yield return GameFolders.Join(desktop, DefaultFolderName);
         }
 
-        /// <summary>The author's working copy on this PC, or null when there is none (the ordinary PC). Never throws.</summary>
-        public static string Find(string desktop, Func<string, string> readShortcut)
+        /// <summary>The author's working copy on this PC, or null when there is none (the ordinary PC). Never throws.
+        /// <paramref name="picked"/> is the folder chosen in Settings (settings.json "devSource"), looked at first.</summary>
+        public static string Find(string desktop, Func<string, string> readShortcut, string picked = null)
         {
             try
             {
-                foreach (var dir in Candidates(desktop, readShortcut))
+                foreach (var dir in Candidates(desktop, readShortcut, picked))
                     if (IsDevFolder(dir)) return dir;
             }
             catch (Exception) { }

@@ -745,6 +745,8 @@ namespace Starpocket.Client.Shell
                 case "openConfig": Reply(id, OpenInNotepad(ctx.Paths.CfgPath, S.T(ctx.Lang, "f_cfg"))); break;
                 case "openLog": Reply(id, OpenInNotepad(ctx.Paths.LogPath, S.T(ctx.Lang, "f_log"))); break;
                 case "openReadme": Reply(id, OpenInNotepad(LauncherFiles.ReadmePath(ctx.DevMode, ctx.Src, ctx.Paths.Modded, ctx.Lang), S.T(ctx.Lang, "f_readme"))); break;
+                // 2026-09-28: 設定の「サードパーティー」。アプリの隣に置いてある NOTICE を開きます
+                case "legal.third": Reply(id, OpenInNotepad(Path.Combine(ctx.ExeDir ?? "", "NOTICE"), S.T(ctx.Lang, "f_notice"))); break;
                 case "openExternal": Reply(id, OpenExternal(inv.Args)); break;
                 case "window.minimize": form.WindowState = FormWindowState.Minimized; Reply(id, Bridge.Ok()); break;
                 case "window.close": Reply(id, Bridge.Ok()); Post(OnCloseButton); break;

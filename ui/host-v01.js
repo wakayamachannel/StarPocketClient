@@ -179,6 +179,15 @@ css.textContent = [
   'html.sp-live .sample-mini{display:none}',
   'html.sp-live .plate,html.sp-live .plate-tag,html.sp-live .plate-cap{display:none}',
   'html.sp-live .splash{background:#0B0C22}',
+  /* v1.4 (2026-09-28): アプリの中に残っていたプロトタイプの品。持ち主が画面を見て気づき、そこから探して出てきた分です。
+     どれも「押すと『（プロトタイプ）』と出るだけ」の物で、本番の受け皿がありません（C# 側にも命令がありません）。
+     受け皿を作るまでは、**押せる形で置かない**方が正しいので隠します。作った時にこの 3 行を消してください。
+       ・Aegis パネルの「デスクトップでの見え方（見本）」… 中身は偽のタスクバーと「いま（PowerShell 版）」の比較表
+       ・CLI の道具 3 つの「説明」… 押すと「本番ではここに使い方を出します（プロトタイプ）」だけ。行の説明文は残ります
+       ・パッチノートの足元の「PROTOTYPE」の札 … .sample ではないので、今までの規則に当たっていませんでした */
+  'html.sp-live [data-open="m-desk"]{display:none}',
+  'html.sp-live [data-cmd="headless"],html.sp-live [data-cmd="cliHelp"],html.sp-live [data-cmd="aegis.trayOnly"]{display:none}',
+  'html.sp-live .foot .proto{display:none}',
   /* the community column: the app keeps no recent players, rooms or Discord count yet (Bridge.Later), so the page's
      lists are handed empty ones (window.spHostRecent) and the count lines, left empty, take their green dot with them */
   'html.sp-live #dcCount:empty,html.sp-live #dcMini:empty{display:none}',
@@ -223,6 +232,15 @@ let hostPstate = null, gameRunning = false, lastWarn = '', aegisData = null, app
 /* the version the app tells us in its "shell" event: the "not in this version" notices name it instead of a fixed 0.1 */
 let appVer = '0.1';
 const tv = (key, vars) => H.t(key, Object.assign({ v:appVer }, vars || {}));
+/* v1.4: 設定の一番下の版の表示。index.html には見本の 'set.ver'（「V1.0.0（見本）」/「V1.0.0（示例）」/「V1.0.0 (sample)」）が
+   直に書いてあって、アプリはそれを差し替えていなかった - v1.1.1 でも「V1.0.0（見本）」と出ていた（持ち主 2026-09-27）。
+   要素の文字を書き換えるだけだと、言語を変えた時（setLang）や設定を描き直した時（refreshSettings）に見本へ戻るので、
+   辞書そのものを 3 言語まとめて本当の版にする。ページ単体（プロトタイプ）は見本のままでよい。 */
+function showVer(){
+  const s = 'V' + appVer;
+  try { for (const l of Object.keys(H.T)) if (H.T[l] && H.T[l]['set.ver']) H.T[l]['set.ver'] = s; } catch (e) { console.error(e); }
+  for (const el of document.querySelectorAll('[data-i18n="set.ver"]')) el.textContent = s;
+}
 /* v1.1: the author's switch (Settings → PocketRoles → 開発). What the app said: whether the working copy of the mod was
    found on this PC (only then is the block drawn - index.html devBlock asks spHostDev), its folder (the account name
    already taken out by the app), the setting as saved, and what is in the game copy right now (from "status"). */
@@ -420,7 +438,7 @@ window.spHostLangPref = p => {
 const on = (name, f) => document.addEventListener('host:' + name, e => { try { f(e.detail || {}); } catch (err) { console.error(err); } });
 
 on('shell', d => {
-  if (d.version) appVer = String(d.version);
+  if (d.version) { appVer = String(d.version); showVer(); }
   resetAppSide();
   if (d.close === 'tray' || d.close === 'quit') { H.prefs.close = d.close; H.savePrefs(); H.refreshSettings(); }
   /* 起動するゲーム: the app's settings.json wins over this page's own storage */
@@ -942,6 +960,15 @@ document.addEventListener('click', e => {
   if (!btn) return;
   const cmd = btn.getAttribute('data-cmd');
   if (cmd === 'uninstall') { e.preventDefault(); e.stopPropagation(); uninstallFlow(); return; }
+  /* v1.4 (2026-09-28): 設定の「サードパーティー」。ページの run() は LOCAL の表を先に見るので、横取りしないと
+     「サードパーティーのお知らせ（プロトタイプ）: 本番はアプリの中で…」という見本のトーストが出たままになります。
+     アプリでは同梱の NOTICE（使っている物のライセンス）を開きます。OSS のライセンス表示なので、
+     隠すのではなく本物を出す、という判断です（持ち主 2026-09-28）。 */
+  if (cmd === 'legal.third') {
+    e.preventDefault(); e.stopPropagation();
+    H.bridge.invoke('legal.third', {}).then(r => { if (!(r && r.ok)) window.spHostReport(r, H.cmdLabel('legal.third')); });
+    return;
+  }
   /* v0.4: the log is a page in this window, not a second one */
   if (cmd === 'showLog') { e.preventDefault(); e.stopPropagation(); openLogPage(); return; }
   if (cmd === 'makeReport') { e.preventDefault(); e.stopPropagation(); reportFlow('makeReport', {}, btn); return; }

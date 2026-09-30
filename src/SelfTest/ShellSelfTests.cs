@@ -954,7 +954,12 @@ namespace Starpocket.Client.SelfTest
             string[] later = { "aegis.banConsole", "recent.clear", "player.vip", "player.restrict", "setOption", "status" };
             r.Check("the app's commands", v01.All(c => Bridge.Classify(c) == Bridge.Kind.Supported), string.Join(",", v01.Where(c => Bridge.Classify(c) != Bridge.Kind.Supported)));
             r.Check("later commands", later.All(c => Bridge.Classify(c) == Bridge.Kind.Later), string.Join(",", later.Where(c => Bridge.Classify(c) != Bridge.Kind.Later)));
-            r.Check("UI-only commands are unknown to the app", new[] { "media.new", "soon", "aegis.status", "headless", "cliHelp", "aegis.trayOnly", "legal.third", "", null, "LAUNCH" }.All(c => Bridge.Classify(c) == Bridge.Kind.Unknown));
+            // 2026-09-28: legal.third をこの列から出して Supported へ移しました。それまでは押すと
+            // 「サードパーティーのお知らせ（プロトタイプ）…」と出るだけで、OSS のライセンスがどこにも出ませんでした。
+            // headless / cliHelp / aegis.trayOnly はアプリの外（コマンドライン）の話なので、ここに残します
+            // （ページ側では sp-live で「説明」ボタンを隠してあります。ui/host-v01.js）。
+            r.Check("UI-only commands are unknown to the app", new[] { "media.new", "soon", "aegis.status", "headless", "cliHelp", "aegis.trayOnly", "", null, "LAUNCH" }.All(c => Bridge.Classify(c) == Bridge.Kind.Unknown));
+            r.Check("legal.third はアプリの命令になった（NOTICE を開く）", Bridge.Classify("legal.third") == Bridge.Kind.Supported);
             r.Equal("unsupported answer", "{\"type\":\"result\",\"id\":\"a1\",\"ok\":false,\"unsupported\":true,\"data\":{\"cmd\":\"aegis.banConsole\",\"version\":\"" + AppInfo.UiVersion + "\",\"arrives\":\"later\"}}", Bridge.ResultJson("a1", Bridge.Unsupported("aegis.banConsole")));
             // v0.4: the last three launcher-only commands are the app's now. The log page is NOT busy-gated: the
             // launcher's log box stayed readable while a task ran, and watching a long task is what it is for.

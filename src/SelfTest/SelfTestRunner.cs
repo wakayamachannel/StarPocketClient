@@ -27,6 +27,7 @@ namespace Starpocket.Client.SelfTest
             HeadlessSelfTests.Run,
             ProfileSelfTests.Run,
             ConsentSelfTests.Run,
+            ModConfigSelfTests.Run,
         };
 
         readonly string root;

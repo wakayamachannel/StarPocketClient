@@ -362,19 +362,31 @@ namespace Starpocket.Client.SelfTest
             r.Test("the spare way in follows the pinned version", () =>
             {
                 string v = AppInfo.BepInExVersion;
+                // 2026-10-01: 2026.9.29 で Among Us が 64bit になり、入れるのは win-x64 になりました。
+                // 「版は合っているが種類が違う」リンクを混ぜてあるのは前と同じ趣旨で、向きだけ入れ替えています
+                // （前は x86 が正解で x64 が罠でした）。種類の違う BepInEx はゲームに読み込まれないので、
+                // 予備の道がそれを拾ってきたら、ファイルは正しく落ちてくるのに MOD が黙って動きません。
+                string right = System.IO.Path.GetFileNameWithoutExtension(AppInfo.BepZipName);   // ...-win-x64-6.0.0-be.735
+                string wrongArch = right.Replace("win-x64", "win-x86");
                 string page =
-                    "<a href=\"BepInEx-Unity.IL2CPP-win-x86-" + v + "+deadbee.zip\">this one</a>" +
-                    "<a href=\"BepInEx-Unity.IL2CPP-win-x86-9.9.9-be.1+cafe.zip\">a different version</a>" +
-                    "<a href=\"BepInEx-Unity.IL2CPP-win-x64-" + v + "+deadbee.zip\">the wrong architecture</a>";
+                    "<a href=\"" + right + "+deadbee.zip\">this one</a>" +
+                    "<a href=\"BepInEx-Unity.IL2CPP-win-x64-9.9.9-be.1+cafe.zip\">a different version</a>" +
+                    "<a href=\"" + wrongArch + "+deadbee.zip\">the wrong architecture</a>";
                 var hits = new List<string>();
                 foreach (System.Text.RegularExpressions.Match m in Installer.BepHref.Matches(page)) hits.Add(m.Groups[1].Value);
                 r.Equal("exactly one link is taken from the page", 1, hits.Count);
                 r.Check("and it is the one naming the version this build installs",
                     hits.Count == 1 && hits[0].IndexOf(v, StringComparison.OrdinalIgnoreCase) >= 0, string.Join(" | ", hits.ToArray()));
+                r.Check("the wrong architecture is never taken, even at the right version",
+                    hits.Count == 1 && hits[0].IndexOf("win-x86", StringComparison.OrdinalIgnoreCase) < 0, string.Join(" | ", hits.ToArray()));
                 // and the pattern carries that version, not one written out beside it: raise AppInfo.BepInExVersion
                 // and leave a literal here, and the two checks above stop finding anything at all
                 r.Check("the pattern is built from AppInfo, so raising the version moves it too",
                     Installer.BepHref.ToString().IndexOf(System.Text.RegularExpressions.Regex.Escape(v), StringComparison.Ordinal) >= 0,
+                    Installer.BepHref.ToString());
+                // 同じ理由で、種類もここに書き写しません: BepZipName を替えれば、この模様もついてきます。
+                r.Check("the pattern is built from the zip's own name, so the architecture moves with it",
+                    Installer.BepHref.ToString().IndexOf(System.Text.RegularExpressions.Regex.Escape(right), StringComparison.Ordinal) >= 0,
                     Installer.BepHref.ToString());
             });
 
@@ -682,10 +694,13 @@ namespace Starpocket.Client.SelfTest
             r.Test("B-12: the check and the install read the same addresses in the same order", () =>
             {
                 string root = r.NewDir("vd-addresses");
+                // 2026-10-01: 入れる物が win-x86 から win-x64 に変わったので、作り物のページも本物に合わせます
+                // （名前は AppInfo.BepZipName から組み立て、ここには種類を書き写しません）。
+                string name = System.IO.Path.GetFileNameWithoutExtension(AppInfo.BepZipName);
                 string page =
-                    "<a href=\"735/BepInEx-Unity.IL2CPP-win-x86-" + v + "+deadbee.zip\">this one</a>" +
-                    "<a href=\"http://builds.bepinex.dev/projects/bepinex_be/735/BepInEx-Unity.IL2CPP-win-x86-" + v + "+plain.zip\">plaintext</a>" +
-                    "<a href=\"735/BepInEx-Unity.IL2CPP-win-x86-9.9.9-be.1+other.zip\">another version</a>";
+                    "<a href=\"735/" + name + "+deadbee.zip\">this one</a>" +
+                    "<a href=\"http://builds.bepinex.dev/projects/bepinex_be/735/" + name + "+plain.zip\">plaintext</a>" +
+                    "<a href=\"735/BepInEx-Unity.IL2CPP-win-x64-9.9.9-be.1+other.zip\">another version</a>";
 
                 var refused = new List<string>();
                 var listWeb = new FakeWeb { Html = page };

@@ -139,6 +139,7 @@ v0.1 の `Src` の決め方（SPEC 10 章 #2 に合わせる）:
 
 - ゲームの版: `<dir>\Among Us_Data\globalgamemanagers` を Latin-1（28591）で読み、正規表現 `20\d\d\.\d{1,2}\.\d{1,2}(?![\dfa-z])`（大文字小文字を区別）で最初に見つかった、`2022.` で始まらないもの。無ければ不明（null）。
 - 入っているもの: `exe` = `Modded\Among Us.exe`、`bep` = `Modded\BepInEx\core\BepInEx.Core.dll` がある、`bepVer` = その ProductVersion、`bepOk` = `bepVer` に `6.0.0-be.735` を含む、`dll` = `DllPath` がある、`dllVer` = ProductVersion が数字で始まれば `+` の前、そうでなければ FileVersion、`interop` = `Modded\BepInEx\interop\Assembly-CSharp.dll` がある。
+- `bepOk` は版の文字列しか見ないので、**x86 と x64 の BepInEx を見分けられません**。ゲームは 2026.9.29 から 64bit なので、BepInEx も win-x64 でなければ動きません。種類は `winhttp.dll` の PE ヘッダで見て、ゲームと違えば入れ直します。
 - `Installed = exe && bep && dll`
 - `NeedsUpdate = steamVer と modVer が両方あり、違う`（Steam が見つからない時は false）
 - 開発: `NeedsRebuild = (modVer があり、状態ファイルの lastBuiltGameVersion と違う) || !dll`。友達: false。
@@ -181,6 +182,7 @@ v0.1 の `Src` の決め方（SPEC 10 章 #2 に合わせる）:
     - 起動のしかた: 今の `Start-Process` と同じく ShellExecute（`ProcessStartInfo.UseShellExecute = true`、動詞は既定）
     - 環境変数: 何も足さない・消さない（アプリの環境をそのまま引き継ぐ）。今のランチャーも何も足していない。違いは PowerShell 自身の `PSModulePath` だけで、ゲームには関係ない。**アプリの中で環境変数を設定しないこと**（WebView2 の設定は `CoreWebView2EnvironmentOptions` と userDataFolder の引数で渡し、`WEBVIEW2_*` 環境変数は使わない。使うとゲームに引き継がれる）。
     - BepInEx を読み込むのはゲームフォルダの `winhttp.dll`（Doorstop）と `doorstop_config.ini`、Steam の外で起動できるのは `steam_appid.txt`（945360。インストールが作る）。アプリは何もしない。
+    - **ゲームは 2026.9.29 から 64bit です。この `winhttp.dll` は必ず win-x64 のものでなければなりません。** 種類が違う `winhttp.dll` は Windows が読み込まず、エラーも記録も出ません（ゲームはふつうに起動し、MOD だけが何も起きません）。「起動したのに MOD が動かない」時は、まずここを見ます。
 11. `la_started` を記録。`{ok:true, data:{text:<la_started>}}`。起動に成功したかは確かめない（今と同じ。例外の時だけ `err`）。
 
 - 全体の例外は `err`（`エラー: {0}`）を記録して `{ok:false, error}`。
@@ -272,7 +274,7 @@ v0.1:
 | # | 項目（キー） | 読むもの | OK（詳細） | 失敗（詳細 / 直し方） | 止める |
 |---|---|---|---|---|---|
 | 1 | Aegis エンジン `engine` | 定義の状態 `SigState` | 0 → `engine.ok`（26, 版）。1 → `engine.nofile`（26）も OK | 2 → `engine.nosig`（黄） | いいえ |
-| 2 | Among Us `game` | `Among Us.exe`、ゲームの版（3.4 と同じ読み方） | 版が `2026.8.18` → `game.ok`。版が読めない → `game.nover`（OK） | exe が無い → `game.none`。版が違う → `game.other`（版, 2026.8.18） | いいえ |
+| 2 | Among Us `game` | `Among Us.exe`、ゲームの版（3.4 と同じ読み方） | 版が `2026.9.29` → `game.ok`。版が読めない → `game.nover`（OK） | exe が無い → `game.none`。版が違う → `game.other`（版, 2026.9.29） | いいえ |
 | 3 | BepInEx `bep` | `BepInEx\core\BepInEx.Core.dll` と `<Game>\winhttp.dll` の両方 | `bep.ok` | `bep.none` | いいえ |
 | 4 | MOD 本体の整合性 `mod` | `plugins\PocketRoles.dll` の SHA-256（`FileShare.ReadWrite` で開く）と版（ProductVersion ?? FileVersion ?? "?" の `+` の前）、`mod-fingerprint.txt` | 前の記録なし → 記録して `mod.first`。ハッシュが同じ → `mod.same`。ハッシュが違い版も違う → 記録し直して `mod.update`（版, 前の版） | DLL が無い → `mod.none`（**止めない**に変える）。ハッシュが違い版が同じ → `mod.changed` / `mod.fix`（記録は書き直さない） | はい |
 | 5 | ほかのプラグイン `plug` | `BepInEx\plugins` の中の `*.dll`（下のフォルダも）で `PocketRoles.dll` 以外（名前は大文字小文字を区別しない） | `plug.ok` | `plug.warn`（名前を `, ` でつなぐ）/ `plug.fix` | はい |
@@ -513,7 +515,7 @@ v0.1:
 
 ### 4.1 プロセスと 1 つだけ起動
 - exe ＝ `StarPocket Client.exe`。AssemblyTitle / FileDescription / Product ＝ `StarPocket Client`、Company ＝ `StarPocket Games`、ApplicationIcon ＝ `starpocket.ico` の写し（アイコン A、9 サイズ）。
-- .NET Framework 4.8、WinForms、`OutputType=WinExe`。ビット数は SPEC 2 章の x86 を勧める（Among Us も 32 bit、`WebView2Loader.dll` は x86 用 1 つ）。
+- .NET Framework 4.8、WinForms、`OutputType=WinExe`。ビット数は SPEC 2 章のとおり x86 を勧める（`WebView2Loader.dll` が x86 用の 1 つで済むため）。ゲームは 2026.9.29 から 64bit になりましたが、アプリはゲームを別のプロセスとして起動するだけなので、**アプリとゲームの種類はそろえなくてかまいません**。そろえるのは**ゲームのフォルダに入れる BepInEx（`winhttp.dll`）の方**で、こちらは必ず win-x64 です（3.5 の 10）。
 - ほかのプロセスのパスは `QueryFullProcessImageName`。HKLM は `Registry64`。
 - ウィンドウを作る前に `SetCurrentProcessExplicitAppUserModelID("StarPocketGames.Client")`。
 - 2 つ目の起動:
@@ -697,7 +699,7 @@ UI の中だけで済み、アプリに送らないもの（プロトタイプ�
    - 偽のルートと UTF-8（日本語のパス）の `libraryfolders.vdf`、`\\` の直し。
    - 最初に `Among Us.exe` があるライブラリを選ぶこと、状態ファイルの `steamDir`。
    - レジストリの代わりにルートの一覧を渡す。
-3. **ゲームの版**: `2026.8.18` を拾う、`2022.x` を飛ばす、`2026.8.18f1` は拾わない、ファイル無し → null。
+3. **ゲームの版**: `2026.9.29` を拾う、`2022.x` を飛ばす、`2026.9.29f1` は拾わない、ファイル無し → null。
 4. **状態の判定**（3.4）: Installed / NeedsUpdate / NeedsRebuild → `pstate` の 7 通り。
 5. **スキャンの判断**（3.9。渡した値で）:
    - エンジン 0/1/2。版が違う。BepInEx（winhttp が無い）。
@@ -757,7 +759,7 @@ UI の中だけで済み、アプリに送らないもの（プロトタイプ�
 - **A-7** 項目の中の例外は黄で止めない（例: プロセス一覧が取れないとチートツールの確認は通る）。わざとの決まり（Aegis の失敗で起動を止めない）。
 - **A-8** 定義の保存は `.sig` を先に置き換える（消してから移す）。途中で落ちると新しい `.sig` と古い本体になり、次はキャッシュが拒まれて同梱に戻る（安全側だが、取ったものは失う）。
 - **A-9** `events.log` は、トレイと起動前スキャン（別プロセス）が鍵なしで追記する。まれに行が混ざる。v0.1 は同じプロセスなので、アプリの中ではロックして書く（ファイルの形は同じ）。
-- **A-10** 対応するゲームの版 `2026.8.18`・ルール数 `26`・BepInEx `6.0.0-be.735` が、あちこちに直に書いてある。アプリでは定数を 1 か所にまとめる（値は同じ）。ゲームが更新されたら一緒に上げる。
+- **A-10** 対応するゲームの版 `2026.9.29`・ルール数 `26`・BepInEx `6.0.0-be.735`（win-x64）が、あちこちに直に書いてある。アプリでは定数を 1 か所にまとめる（値は同じ）。ゲームが更新されたら一緒に上げる。**BepInEx は版だけでなく種類（win-x86 / win-x64）も定数にまとめ、ゲームと同じ種類のものを入れる。**
 - **A-11** 見張りは、どのフォルダの `Among Us` でも「監視中」になる（Steam 版でも。MOD 用のコピーのログは書き直されないので何も読まないが、表示は監視中）。
 - **A-12** スキャンの各項目は UI のスレッドで動く（プロセス一覧・レジストリ・DLL の SHA-256 の間、画面が少し固まる）。v0.1 は別のスレッドで動かす（判断は同じ）。
 - **A-13**（移植で見つけた・そのまま）`events.log`・`aegis.log`・状態の一覧の時刻は、`ToString("yyyy-MM-dd HH:mm:ss")` を**今の地域の設定**で書く。`:` は「時刻の区切り」の記号なので、区切りが `:` でない地域（例: 一部の北欧の設定）では `21.04.12` のようになる。30 日の整理（`EventsLog.Prune`）は `:` の形（InvariantCulture）でしか読まないので、その地域では行が**いつまでも消えない**（プレイヤー名の 30 日の決まりが効かない）。日本・中国・英語の設定では起きない。直すなら書く方も InvariantCulture にする（MOD と Aegis.ps1 も一緒に）。
@@ -1122,7 +1124,9 @@ MOD 側のブランチ `evidence-90d`（コミット **`34506c3`**。2026-09-23 
 | 値を書いていない版だったら | **断る**（`in_bep_nohash`）。ネットにもつながない。「確認できないが、とりあえず入れる」という道はわざと作っていない |
 | 値の書き忘れを防ぐ | 自己テストが `AppInfo.BepInExVersion` の値が表にあるか、64 文字の小文字で書かれているか、取得先の住所とキャッシュのファイル名がその版を指しているかを毎回確かめる。版だけ上げると**ビルドが赤くなる** |
 
-- 今の値: BepInEx `6.0.0-be.735`（`BepInEx-Unity.IL2CPP-win-x86-6.0.0-be.735+5fef357.zip`、31,305,993 バイト、SHA-256 `9cd83eae4d47ab07e4ad7f4d98a0085f60fb4b61957857ff197c8729cf1bc483`、2026-09-23 に `builds.bepinex.dev` から取得して確認）。
+- 今の値: BepInEx `6.0.0-be.735` の **win-x64**（`BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.735+5fef357.zip`、34,202,062 バイト、SHA-256 `badef8112853a00939a0df6ca143bc0a4e3dc02bd4d21b873302731bfa0e4df4`、2026-10-01 に `builds.bepinex.dev` から取得して確認）。doorstop は 4.3.0、この zip の `winhttp.dll` は 26,112 バイト。
+- **2026.9.29 でゲームが 64bit になったので、win-x86 から win-x64 に替えました。** 版は同じ be.735 のままなので、**版の文字列だけでは、入っている BepInEx がどちらの種類かわかりません**。すでに入っているものがゲームと違う種類だったら、版が同じでも入れ直します（種類は PE ヘッダで見ます）。
+  - それまでの値の記録（もう使いません）: `BepInEx-Unity.IL2CPP-win-x86-6.0.0-be.735+5fef357.zip`、31,305,993 バイト、SHA-256 `9cd83eae4d47ab07e4ad7f4d98a0085f60fb4b61957857ff197c8729cf1bc483`、2026-09-23 に取得。`winhttp.dll` は 22,016 バイト。
 - **配布元は zip の SHA-256 を公開していません**（ページに出ている短い英数字はソースの印であって zip の値ではない）。突き合わせる相手がいないので、この値は「その日に公式の配布元が配っていたファイル」を書き留めたものです。念のため、2 つの別々の道具で同じ値になること、zip 自身が持つ CRC がすべて合うことを確かめました。
 - **新しいビルドに乗りかえる時の手順は `docs\BEPINEX-PIN.md`。** 値は推測できないので、**誰かが 1 回だけダウンロードして読む**必要があります。自動の作業に頼む時は、その回ごとに「1 回だけダウンロードしてよい」と伝えてください。
 - 自己テスト: 「BepInEx: the file itself」42 件（正しいファイル・差し替えられたファイル・途中で切れたファイル・値が無い版・キャッシュに誰かが置いたファイル）。全体は 1150 件 → **1192 件**。画面のテストは 1515 件のまま。

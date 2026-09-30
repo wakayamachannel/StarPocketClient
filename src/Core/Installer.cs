@@ -113,9 +113,14 @@ namespace Starpocket.Client.Core
         /// <see cref="AppInfo.BepInExVersion"/>, never written out again: the index page is the spare way in when both
         /// pinned addresses 404 (the file name on builds.bepinex.dev carries a per-build suffix such as +5fef357, so
         /// the written-down addresses go stale on their own), and a version number raised in AppInfo while this line
-        /// still said the old one would quietly find nothing (v0.4 review).</summary>
+        /// still said the old one would quietly find nothing (v0.4 review).
+        ///
+        /// <para>2026-10-01: ここには "win-x86" が直に書いてありました。本体が 64bit になって
+        /// <see cref="AppInfo.BepZipName"/> を x64 に替えたとき、この行だけが x86 のまま残ると、
+        /// 固定アドレスが 404 になった日に「予備の道」が 32bit の方を拾ってきます。それは動かないファイルです。
+        /// 版と同じ理由で、**種類もここには書きません**。ファイル名そのもの（拡張子を除いた部分）から組み立てます。</para></summary>
         internal static readonly Regex BepHref = new Regex(
-            "href=\"([^\"]*BepInEx-Unity\\.IL2CPP-win-x86-" + Regex.Escape(AppInfo.BepInExVersion) + "[^\"'\\s]*\\.zip)\"",
+            "href=\"([^\"]*" + Regex.Escape(Path.GetFileNameWithoutExtension(AppInfo.BepZipName)) + "[^\"'\\s]*\\.zip)\"",
             RegexOptions.IgnoreCase);
 
         string T(string key, params object[] args) => S.T(Lang(), key, args);
@@ -345,12 +350,26 @@ namespace Starpocket.Client.Core
             if (GameFolders.PathExists(core))
             {
                 string pv = GameVersion.ProductVersion(core);
-                if (SkipBepInEx(force, pv))
+                // 2026-10-01: 版が合っていても、ゲームと種類 (32bit / 64bit) の違う winhttp.dll は Windows が読み込みません。
+                // 2026.9.29 で本体が 64bit になったので、32bit の BepInEx を入れたままの人がここに来ます。
+                // その人のフォルダーは「BepInEx\core も winhttp.dll も在る」状態なので、版だけを見ていると飛ばしてしまい、
+                // ファイルは全部そろっているのに MOD だけ黙って動かない —— 一番わかりにくい壊れ方になります。
+                // だから「入っているから飛ばす」の前に、ゲームと同じ種類かどうかを見ます。
+                string doorstop = GameFolders.Join(Paths.Modded, "winhttp.dll");
+                ushort exeArch = PeArch.Machine(Paths.GameExe), dsArch = PeArch.Machine(doorstop);
+                bool archOk = GameFolders.PathExists(doorstop)
+                    && (exeArch == PeArch.Unknown || dsArch == PeArch.Unknown || exeArch == dsArch);
+                if (!archOk)
+                {
+                    // 飛ばさずに入れ直します（下の処理がそのまま上書きします）。force と同じ扱い。
+                    Log(T("in_bep_arch", PeArch.Name(exeArch), PeArch.Name(dsArch)));
+                }
+                else if (SkipBepInEx(force, pv))
                 {
                     Log(T("in_bep_skip", AppInfo.BepInExVersion));
                     return true;
                 }
-                if (!force) Log(T("in_bep_other", pv, AppInfo.BepInExVersion));
+                else if (!force) Log(T("in_bep_other", pv, AppInfo.BepInExVersion));
             }
             // Before anything is fetched or unpacked: do we know what the right file looks like? A version with no
             // pinned SHA-256 is refused outright - there is no "install it anyway" path, because the one thing worse
@@ -616,8 +635,37 @@ namespace Starpocket.Client.Core
             });
             Log(T("in_mod_done", v));
             SaveAegisFingerprint();
+            ApplyConsentToMod();
             ModOriginFile.Record(OriginDir, Paths.DllPath, ModOrigin.Release, v, Now(), Log);   // v1.1: 配布用 is what is in the copy now
             return true;
+        }
+
+        /// <summary>最初の同意画面の 2 つの答え（チャット翻訳・自動通報）を MOD の設定ファイルに書く。
+        ///
+        /// 2026-09-27 に足しました。<see cref="Consent"/> のコメントは「インストールの時に MOD の設定に書く」と
+        /// 言っていたのに、書く側がどこにもありませんでした（この PC では「自動通報はしない」と答えた記録があるのに
+        /// [AntiCheat] AutoReport = true のままでした）。同意の画面で選ばせておいて効いていない、という形だったので塞ぎます。
+        ///
+        /// **同じ答えに対して一度しか書きません。**その後にホストが自分で /opt や設定タブで変えたものを、
+        /// 次のアップデートや修復で黙って元に戻さないためです。文書が変わって同意を取り直したら（agreedAt が変わる）、
+        /// その新しい答えでもう一度書きます。</summary>
+        internal void ApplyConsentToMod()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(OriginDir) || Paths == null || string.IsNullOrEmpty(Paths.CfgPath)) return;
+                var c = Consent.Load(Consent.PathIn(OriginDir));
+                if (!c.Agreed || c.AgreedAt.Length == 0) return;
+                if (State != null && State.Str("consentAppliedFor") == c.AgreedAt) return;   // この答えではもう書いた
+
+                bool tr = c.ChatTranslate == "on", ar = c.AutoReport == "on";
+                ModConfigFile.Set(Paths.CfgPath, "Translate", "Enabled", tr ? "true" : "false", Log);
+                ModConfigFile.Set(Paths.CfgPath, "AntiCheat", "AutoReport", ar ? "true" : "false", Log);
+                if (State != null)
+                    State.Update(new Dictionary<string, object> { ["consentAppliedFor"] = c.AgreedAt });
+                Log(T("in_consent", T(tr ? "in_consent_on" : "in_consent_off"), T(ar ? "in_consent_on" : "in_consent_off")));
+            }
+            catch (Exception ex) { Log("consent -> mod config: " + ex.Message); }
         }
 
         /// <summary>Save-AegisFingerprint (ps1:818-828): the DLL this app installed is the one Aegis expects.</summary>

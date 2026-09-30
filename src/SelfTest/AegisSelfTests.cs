@@ -540,7 +540,9 @@ namespace Starpocket.Client.SelfTest
         {
             string g = Path.Combine(root, "Among Us PocketRoles");
             SelfTestRunner.Touch(Path.Combine(g, "Among Us.exe"));
-            WriteLatin1(Path.Combine(g, @"Among Us_Data\globalgamemanagers"), "\0\0unity 2022.3.44f1\0\0 2026.8.18f1 \0 2026.8.18\0 2026.9.2");
+            // 「2022.x は Unity の版なので飛ばす」「末尾に f1 が付く物も飛ばす」を同時に試すための並び。
+            // 先頭の本物は対応版（AppInfo.SupportedGameVersion）と同じ文字にしてあります。
+            WriteLatin1(Path.Combine(g, @"Among Us_Data\globalgamemanagers"), "\0\0unity 2022.3.44f1\0\0 2026.9.29f1 \0 2026.9.29\0 2026.9.2");
             SelfTestRunner.Touch(Path.Combine(g, "winhttp.dll"));
             SelfTestRunner.Touch(Path.Combine(g, "UnityPlayer.dll"));
             SelfTestRunner.Touch(Path.Combine(g, @"BepInEx\core\BepInEx.Core.dll"));
@@ -590,9 +592,13 @@ namespace Starpocket.Client.SelfTest
                 r.Equal("engine: unsigned -> yellow, never red", "3 定義の署名なし・不一致（組み込みの定義を使用）", D(Run1("engine", game, st, unsigned, sys)));
 
                 // 2 game
-                r.Equal("game: 2026.8.18 (2022.x and 2026.8.18f1 skipped)", "2 2026.8.18（対応版）", D(Run1("game", game, st, none, sys)));
+                // 下の 2 行には対応版を文字で書いてあります（文面そのものを確かめるため）。ゲームが更新されて
+                // AppInfo.SupportedGameVersion を上げたら、この 3 行と MakeGame の並びを一緒に直してください。
+                // どこを直すのかが一目で分かるよう、まずその一致だけを見ます。
+                r.Equal("この試験に書いてある対応版は AppInfo と同じ（上げるときは両方）", AppInfo.SupportedGameVersion, "2026.9.29");
+                r.Equal("game: 2026.9.29 (2022.x and 2026.9.29f1 skipped)", "2 2026.9.29（対応版）", D(Run1("game", game, st, none, sys)));
                 WriteLatin1(Path.Combine(game, @"Among Us_Data\globalgamemanagers"), "2026.9.2\0");
-                r.Equal("game: another version -> yellow", "3 2026.9.2（対応版は 2026.8.18）", D(Run1("game", game, st, none, sys)));
+                r.Equal("game: another version -> yellow", "3 2026.9.2（対応版は 2026.9.29）", D(Run1("game", game, st, none, sys)));
                 File.Delete(Path.Combine(game, @"Among Us_Data\globalgamemanagers"));
                 r.Equal("game: version unreadable -> OK", "2 Among Us.exe を確認", D(Run1("game", game, st, none, sys)));
                 r.Equal("game: no Among Us.exe -> yellow", "3 MOD 用のゲームフォルダが見つかりません", D(Run1("game", Path.Combine(root, "nowhere"), st, none, sys)));

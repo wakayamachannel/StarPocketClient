@@ -899,17 +899,25 @@ window.__spChecks = async function(group, mode){
        Bridge.Later にあって Supported にも BeforeConsent にも無いので、押しても C# 側で断られ、
        返事も捨てていたのでトーストすら出なかったためです。
        同意という一番信用が要る画面で、文書が本物だと示すためのボタンが黙って無反応、という形でした。
-       ここを誰も見ていなかったのが、release 候補まで残った理由なので、見張りを置きます。 */
+       ここを誰も見ていなかったのが、release 候補まで残った理由なので、見張りを置きました。
+
+       2026-09-26（595ea20「法務文書を確定版（1.0）にした」）: ボタンそのものを ui/index.html から外しました。
+       押せない物を置かない、という判断です。理由と、開けるようにする日の手順は ui/index.html の
+       .fr-docfoot のすぐ上のコメントに書いてあります。
+       **そのときこの見張りを直さなかったので、2 項目 × 3 言語 × 明暗 = 12 件が落ちたままになり、
+       v1.0.2 から v1.1.1 まで 6 回、赤いまま出していました**（持ち主 2026-09-27 に発覚）。
+       自己診断が鳴りっぱなしだと誰も見なくなり、その裏で別のバグ（設定の版が「V1.0.0（見本）」のまま）が
+       release まで残りました。なので見張りは**消さずに、向きを変えて**残します:
+       いまは「ボタンが**無い**こと」を見ます。design/launcher-proto/index.html にはまだ frOpen が残っているので、
+       もし誰かが tools/import-ui.ps1 で ui を作り直したら、この項目が落ちて気づけます。 */
     if (typeof window.spFirstRun === 'function') {
       window.spFirstRun();
       await tick();
 
       const fr = $('#firstrun'), open = $('#frOpen'), warn = $('#frDocWarn'), agree = $('#frAgree');
       add('同意の画面: 出る', fr && fr.hidden === false);
-      add('同意の画面: 「ブラウザで開く」は押せない（行き先をまだ公開していないので）',
-        !!open && open.disabled === true, open ? open.textContent : 'no button');
-      add('同意の画面: なぜ押せないかが吹き出しに書いてある',
-        !!open && typeof open.title === 'string' && open.title.length > 0, open ? open.title : '');
+      add('同意の画面: 「ブラウザで開く」のボタンは無い（2026-09-26 に外した。押せない物を置かないため）',
+        open === null, open ? open.outerHTML.slice(0, 90) : 'no button');
       /* 文書が 3 本とも読めた時だけ同意できる。読めていない物に同意させない */
       add('同意の画面: 3 本読めていれば、警告は出ていない', !!warn && warn.hidden === true);
       add('同意の画面: 3 本読めていれば、チェックは押せる', !!agree && agree.disabled === false);

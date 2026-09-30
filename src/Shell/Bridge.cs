@@ -38,6 +38,10 @@ namespace Starpocket.Client.Shell
             "pickModSource",   // v1.4: 開発モードのソースのフォルダを選ぶ（作者の PC だけ。ClientApp.PickModSource）
             "aegis.rescan", "aegis.scanOnly", "aegis.events",
             "openModFolder", "openLogsFolder", "openConfig", "openLog", "openReadme",
+            // 2026-09-28: 設定の「サードパーティー」。同梱の NOTICE（使っている物のライセンス）を開きます。
+            // それまでは押しても「サードパーティーのお知らせ（プロトタイプ）…」と出るだけで、受け皿がありませんでした。
+            // OSS のライセンス表示なので、黙って隠すのではなく、本物を出す方を選びました（持ち主 2026-09-28）。
+            "legal.third",
             // 2026-09-26: Discord の「参加する」、製品サイト、公開した利用規約・プライバシーポリシー。
             // ページが渡すのは **名前** だけで、行き先は AppInfo.ExternalPage が決めます（URL は受け取りません）。
             "openExternal",

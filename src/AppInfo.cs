@@ -113,7 +113,13 @@ namespace Starpocket.Client
         }
 
         // the game the mod is built for (change together when Among Us updates)
-        public const string SupportedGameVersion = "2026.8.18";
+        //
+        // 2026-09-29 の v19.0.0 (2026.9.29) から Among Us は **64bit** になりました（それまでは 32bit）。
+        // そのため BepInEx も win-x64 の方でないとゲームに割り込めません。下の BepZipName / BepUrls / BepZipSha256 は
+        // まとめて x64 に切り替えてあります。既に 32bit の BepInEx が入っている人は、Installer.StepBepInEx が
+        // ゲームと種類が違うことに気づいて入れ直します（PeArch.cs）。
+        // MOD 側の同じ値: HostRoles\src\PocketRolesPlugin.cs の SupportedGameVersion、HostRoles\aegis\Aegis.ps1 の SupportedGame。
+        public const string SupportedGameVersion = "2026.9.29";
         public const string BepInExVersion = "6.0.0-be.735";
         public const int AegisRuleCount = 26;
         public const string SteamAppId = "945360";
@@ -140,11 +146,13 @@ namespace Starpocket.Client
         /// </summary>
         public const string UserAgent = "StarPocketClient/" + Version + " (+" + ClientRepoUrl + ")";
         public const string BepIndexUrl = "https://builds.bepinex.dev/projects/bepinex_be";
-        public const string BepZipName = "BepInEx-Unity.IL2CPP-win-x86-6.0.0-be.735.zip";
+        // win-x64: 2026.9.29 (v19.0.0) で Among Us が 64bit になったため。32bit のままだと winhttp.dll が
+        // ゲームに読み込まれず、MOD は「エラーになる」のではなく **何も起きません**（一番気づきにくい壊れ方）。
+        public const string BepZipName = "BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.735.zip";
         public static readonly string[] BepUrls =
         {
-            "https://builds.bepinex.dev/projects/bepinex_be/735/BepInEx-Unity.IL2CPP-win-x86-6.0.0-be.735%2B5fef357.zip",
-            "https://builds.bepinex.dev/projects/bepinex_be/735/BepInEx-Unity.IL2CPP-win-x86-6.0.0-be.735+5fef357.zip",
+            "https://builds.bepinex.dev/projects/bepinex_be/735/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.735%2B5fef357.zip",
+            "https://builds.bepinex.dev/projects/bepinex_be/735/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.735+5fef357.zip",
         };
 
         // ---- and WHAT may come back from those addresses (the other half of the host list above).
@@ -160,9 +168,12 @@ namespace Starpocket.Client
         // this table is REFUSED, never installed anyway.
         static readonly Dictionary<string, string> BepZipSha256 = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            // BepInEx-Unity.IL2CPP-win-x86-6.0.0-be.735+5fef357.zip - 31,305,993 bytes
-            // from https://builds.bepinex.dev/projects/bepinex_be/735/ , checked 2026-09-23
-            ["6.0.0-be.735"] = "9cd83eae4d47ab07e4ad7f4d98a0085f60fb4b61957857ff197c8729cf1bc483",
+            // BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.735+5fef357.zip - 34,202,062 bytes
+            // from https://builds.bepinex.dev/projects/bepinex_be/735/ , checked 2026-10-01
+            // (2026.9.29 で Among Us が 64bit になったので x86 から x64 に替えました。x86 の方は
+            //  31,305,993 bytes / 9cd83eae4d47ab07e4ad7f4d98a0085f60fb4b61957857ff197c8729cf1bc483 でした。
+            //  同じ鍵に 2 つの値は持てません: このアプリが入れるのは常に 1 つだけで、今は x64 です。)
+            ["6.0.0-be.735"] = "badef8112853a00939a0df6ca143bc0a4e3dc02bd4d21b873302731bfa0e4df4",
         };
 
         /// <summary>The SHA-256 the BepInEx zip of <paramref name="version"/> must have, or null when this build of the

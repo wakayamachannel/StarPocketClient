@@ -189,6 +189,11 @@ namespace Starpocket.Client.Core
                     Log(T("in_partial", failed));
                     return TaskOutcome.Bad(T("in_partial", failed));
                 }
+                // 5 つの手順が全部そろって初めて、前回の中断の記録を消します。
+                // 展開のたびに消していた（finally）のをやめた代わりがここです。途中の手順が失敗した時に
+                // 消してしまうと、次回 forceFiles が立たず、半分だけ入ったファイルが
+                // 「版が合っているので飛ばします」と扱われてしまいます（それが元の不具合でした）。
+                if (interrupted) DeleteQuiet(ExtractMarkerPath);
                 var info = InstallInfo.Read(Paths);
                 State.Update(new Dictionary<string, object>
                 {
@@ -532,8 +537,30 @@ namespace Starpocket.Client.Core
 
         internal bool InstallModRelease(ReleaseInfo rel, int step)
         {
-            string zip = GameFolders.Join(CacheDir, rel.AssetName);
-            if (File.Exists(zip) && ZipFiles.Has(zip, ModDllEntry)) Log(T("in_cached", zip));
+            // 2026-10-01: ここは %TEMP% のキャッシュに rel.AssetName（= "PocketRoles-0.5.5.zip"）だけを
+            // 名前にして置いていました。作者が**同じ版番号のまま中身を差し替えて出し直す**と名前は変わらないので、
+            // キャッシュに残っている古い zip がそのまま使い回されます。しかもそのあと StepMod / CheckUpdate は
+            // launcher-state.json の modSource に「新しい方」の AssetKey を書くので、
+            // ReleaseInfo.ModCurrent は以後ずっと「最新です」と答えます。
+            // つまり**本人は古い MOD を使い続け、しかも気づく手がかりが 1 つも残らない**という形でした。
+            //
+            // MOD の zip には固定の SHA-256 がありません（InstallModZip のコメント参照）。
+            // なので「ハッシュで確かめる」はここでは使えません。代わりに、この launcher が既に
+            // 「どの配布物か」を表す物として使っている AssetKey（名前 + バイト数 + 更新日時。ReleaseInfo.Latest）を
+            // キャッシュの**ファイル名に入れます**。state に記録する鍵とキャッシュを引く鍵が同じ物になるので、
+            // 「古いファイルを入れたのに新しい鍵を記録する」というずれが起きなくなります。
+            // 中身が差し替わると AssetKey が変わり、AssetKey が変わると名前も変わるので、古い zip には当たりません。
+            // ついでに %TEMP% が PowerShell 版ランチャーと共用である問題（同名の別物を拾う）も、
+            // 同じ理屈で閉じます。
+            string name = CacheZipName(rel.AssetName, rel.AssetKey);
+            string zip = GameFolders.Join(CacheDir, name);
+            // 版を出し直すたびに zip が 1 つ増えるので、同じ配布物名で鍵だけ違う古い物は先に片付けます
+            // （落とす前に片付けるのは、ディスクの空きのため）。
+            DropOtherCachedBuilds(name, rel.AssetName);
+            // AssetKey が無い（Ok でない ReleaseInfo を渡された等）時は、どの配布物なのか見分けられません。
+            // 見分けられない物を使い回すと上の不具合に戻るので、その時はキャッシュを信用せず必ず落とし直します。
+            bool mayReuse = !string.IsNullOrEmpty(rel.AssetKey);
+            if (mayReuse && File.Exists(zip) && ZipFiles.Has(zip, ModDllEntry)) Log(T("in_cached", zip));
             else
             {
                 Log(T("in_dl", rel.AssetUrl));
@@ -541,6 +568,69 @@ namespace Starpocket.Client.Core
                 Web.Download(rel.AssetUrl, zip, (done, total) => Bytes(step == 4 ? "install" : "update", step, done, total, clock));
             }
             return InstallModZip(zip);
+        }
+
+        /// <summary>キャッシュに置く zip の名前: "PocketRoles-0.5.5-&lt;鍵 16 桁&gt;.zip"。
+        /// 同じ版番号で中身を差し替えて出し直されても、鍵が変わるので別の名前になります。</summary>
+        internal static string CacheZipName(string assetName, string assetKey)
+        {
+            string baseName = Path.GetFileNameWithoutExtension(assetName ?? "");
+            string ext = Path.GetExtension(assetName ?? "");
+            if (string.IsNullOrEmpty(baseName)) baseName = "PocketRoles";
+            if (string.IsNullOrEmpty(ext)) ext = ".zip";
+            return baseName + "-" + CacheTag(assetKey) + ext;
+        }
+
+        /// <summary>AssetKey を、ファイル名に使える 16 桁の 16 進にします。
+        /// AssetKey はそのままでは名前に使えません（":" が入っていて、長さも決まっていません）。
+        /// これは**真偽を確かめるハッシュではありません**（MOD の zip には固定の SHA-256 がありません）。
+        /// 「別の配布物なら別の名前になる」ための見分け札です。</summary>
+        internal static string CacheTag(string assetKey)
+        {
+            using (var alg = SHA256.Create())
+            {
+                var h = alg.ComputeHash(Encoding.UTF8.GetBytes(assetKey ?? ""));
+                var sb = new StringBuilder(16);
+                for (int i = 0; i < 8; i++) sb.Append(h[i].ToString("x2", CultureInfo.InvariantCulture));
+                return sb.ToString();
+            }
+        }
+
+        /// <summary>同じ配布物名で、鍵だけが違う古いキャッシュを消します。
+        /// 消すのは**この app が付けた形（&lt;名前&gt;-&lt;16 桁の 16 進&gt;.zip）だけ**です。
+        /// %TEMP%\PocketRolesLauncher は PowerShell 版ランチャーと共用なので、
+        /// あちらが置いた鍵なしの "PocketRoles-0.5.5.zip" や "PocketRoles-0.5.5-setup.zip" は
+        /// この形に当てはまらず、触りません。</summary>
+        void DropOtherCachedBuilds(string keep, string assetName)
+        {
+            try
+            {
+                string baseName = Path.GetFileNameWithoutExtension(assetName ?? "");
+                string ext = Path.GetExtension(assetName ?? "");
+                if (string.IsNullOrEmpty(baseName) || string.IsNullOrEmpty(ext)) return;
+                if (string.IsNullOrEmpty(CacheDir) || !Directory.Exists(CacheDir)) return;
+                foreach (var f in Directory.GetFiles(CacheDir, baseName + "-*" + ext))
+                {
+                    string n = Path.GetFileName(f);
+                    if (string.Equals(n, keep, StringComparison.OrdinalIgnoreCase)) continue;
+                    // 検索の形（*.zip）は短い名前にも当たることがあるので、前後を自分でもう一度確かめます
+                    if (!n.StartsWith(baseName + "-", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!n.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) continue;
+                    int tagLen = n.Length - (baseName.Length + 1) - ext.Length;
+                    if (tagLen != 16) continue;
+                    string tag = n.Substring(baseName.Length + 1, tagLen);
+                    if (!IsLowerHex(tag)) continue;
+                    DeleteQuiet(f);
+                }
+            }
+            catch (Exception) { }
+        }
+
+        static bool IsLowerHex(string s)
+        {
+            foreach (char c in s)
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+            return s.Length > 0;
         }
 
         /// <summary>
@@ -567,21 +657,44 @@ namespace Starpocket.Client.Core
 
         internal bool ExtractionWasInterrupted() => GameFolders.PathExists(ExtractMarkerPath);
 
+        /// <summary>展開を始める前に目印を置きます。戻り値は「この呼び出しが置いたか」。
+        ///
+        /// <para>**既に目印がある時は上書きせず false を返します。**その目印は前回の中断の記録で、まだ誰も
+        /// 片付けていません。自分の展開が成功したからといってそれを消すと、たとえば
+        /// 「BepInEx が半分だけ入った状態 → 次の起動で BepInEx は入れ直せなかったが MOD の展開だけ成功」
+        /// のときに目印が消え、半分だけの BepInEx が次から「入っている」ことになります。
+        /// 消してよいのは**自分が置いた目印だけ**です。前回の分を消すのは、5 つの手順が全部そろった時
+        /// （<see cref="Install"/> の最後）だけです。</para></summary>
+        bool MarkExtracting(string zipName)
+        {
+            if (GameFolders.PathExists(ExtractMarkerPath)) return false;
+            try { Directory.CreateDirectory(Paths.Modded); File.WriteAllText(ExtractMarkerPath, zipName + "\r\n", new UTF8Encoding(false)); }
+            catch (Exception) { }
+            return true;
+        }
+
         internal int Expand(string zip, string[] skip)
         {
-            try { Directory.CreateDirectory(Paths.Modded); File.WriteAllText(ExtractMarkerPath, Path.GetFileName(zip) + "\r\n", new UTF8Encoding(false)); }
-            catch (Exception) { }
-            try { return ZipFiles.ExpandOver(zip, Paths.Modded, skip); }
-            finally { try { File.Delete(ExtractMarkerPath); } catch (Exception) { } }
+            // 2026-10-01: ここは目印を finally で消していました。finally は**失敗した時にも走ります**。
+            // つまり展開が途中で例外になっても（ディスクが満杯、ファイルが掴まれている、zip が壊れている）
+            // 目印が消えてしまい、半分だけ展開されたファイルが次の起動で「入っている」ことになっていました。
+            // 目印がある目的そのものが、その finally で打ち消されていた、ということです。
+            // だから消すのは**正常に戻ってきた時だけ**。例外はそのまま上に投げ、目印は残します
+            // （残っていれば次回 ExtractionWasInterrupted() が true になり、版に関係なく入れ直します）。
+            bool mine = MarkExtracting(Path.GetFileName(zip));
+            int n = ZipFiles.ExpandOver(zip, Paths.Modded, skip);
+            if (mine) DeleteQuiet(ExtractMarkerPath);
+            return n;
         }
 
         /// <summary>The same, from the handle the fingerprint was read on (<see cref="CheckAndExpandBep"/>).</summary>
         internal int Expand(VerifiedZip zip, string[] skip)
         {
-            try { Directory.CreateDirectory(Paths.Modded); File.WriteAllText(ExtractMarkerPath, AppInfo.BepZipName + "\r\n", new UTF8Encoding(false)); }
-            catch (Exception) { }
-            try { return zip.ExpandOver(Paths.Modded, skip); }
-            finally { try { File.Delete(ExtractMarkerPath); } catch (Exception) { } }
+            // 上と同じ理由: 成功して戻った時だけ目印を消します（finally では消しません）。
+            bool mine = MarkExtracting(AppInfo.BepZipName);
+            int n = zip.ExpandOver(Paths.Modded, skip);
+            if (mine) DeleteQuiet(ExtractMarkerPath);
+            return n;
         }
 
         static string Mb(long bytes) => (bytes / (1024.0 * 1024.0)).ToString("0", CultureInfo.InvariantCulture) + " MB";

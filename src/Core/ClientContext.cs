@@ -2,6 +2,7 @@
 // taken over from the PowerShell launcher since v0.2), settings, language, the game copy and Steam's copy.
 // SPDX-License-Identifier: GPL-3.0-or-later
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 
@@ -24,8 +25,10 @@ namespace Starpocket.Client.Core
         public string SteamOverride;
         /// <summary>Steam's Among Us folder found at start (null when not found), like $script:Steam.</summary>
         public string SteamDir;
-        /// <summary>launcher-state.json: the launcher's own file when the app runs from its folder (or in developer mode),
-        /// else the app's own in %LOCALAPPDATA%\StarPocket\Client, filled once from the old launcher's (PORT-MAP 13.1).</summary>
+        /// <summary>launcher-state.json: the launcher's own file when the app runs from its folder (or when a developer
+        /// build runs from the repository), else the app's own in %LOCALAPPDATA%\StarPocket\Client, filled once from the
+        /// old launcher's (PORT-MAP 13.1). v1.5: the switch in Settings no longer changes which file this is - see
+        /// <see cref="LoadState"/>.</summary>
         public LauncherStateFile State;
         /// <summary>%LOCALAPPDATA% as the whole app sees it - one source of truth. DataDir, the Aegis folder and the
         /// uninstall's "never touch this" guards are all built from this same value (v0.3 review: the uninstall used to
@@ -108,22 +111,97 @@ namespace Starpocket.Client.Core
         /// found, and this is not a developer build already running from the repository (nothing to turn off there).</summary>
         public bool DevSwitchShown => DevFolder != null && !(DevMode && !DevFromSetting);
 
-        /// <summary>PORT-MAP 13.1: the launcher's own file when the app sits in the launcher's folder (or in developer mode,
-        /// where the launcher writes lastBuiltGameVersion); otherwise the app's own file, filled once from the old
-        /// launcher's - found through the Desktop shortcut "PocketRoles Launcher.lnk" - so settings and records carry over.</summary>
+        /// <summary>PORT-MAP 13.1: the launcher's own file when the app sits in the launcher's folder (or in a developer
+        /// build running from the repository, where the launcher writes lastBuiltGameVersion); otherwise the app's own
+        /// file, filled once from the old launcher's - found through the Desktop shortcut "PocketRoles Launcher.lnk" -
+        /// so settings and records carry over.
+        /// <para>v1.5: WHICH file is the file may not depend on the switch in Settings, and until now it did. 「shared」
+        /// was judged from Src, and Src is the author's working copy in developer mode (DevSource.Choose), so 開発 on
+        /// read &lt;working copy&gt;\launcher-state.json while 開発 off read the app's own in %LOCALAPPDATA%: two files of
+        /// installedVersion / modSource / gameVersion / lastCheck / lastBuiltGameVersion for ONE game copy (both modes
+        /// install into the same ..\Among Us PocketRoles). 「更新を確認」 answers from modSource
+        /// (ReleaseInfo.ModCurrent), so with the very same DLL installed one mode said 「最新です」 and the other offered
+        /// the version that was already there. Now only where the EXE is decides, which no switch can move:
+        /// a developer build from the repository keeps the repository's file; an exe placed in the old launcher's own
+        /// folder keeps that folder's file (judged on ExeDir, not Src); every published exe uses the app's own file in
+        /// both modes. Records left in the working copy's file by the older behaviour are carried over once, by
+        /// <see cref="TakeOverDevState"/>, so nobody loses what is written there.</para></summary>
         internal void LoadState(Func<string, string> readShortcut)
         {
-            bool shared = DevMode || LegacyLauncher.IsLauncherFolder(Src);
-            string path = shared ? GameFolders.Join(Src, AppInfo.StateFileName) : Path.Combine(DataDir, AppInfo.StateFileName);
+            bool devFromExe = DevMode && !DevFromSetting;   // the project file sits beside the exe (or --source-dir in a developer build)
+            // (an empty ExeDir is never asked about: Join would make "PocketRolesLauncher.ps1" a RELATIVE path and
+            // Test-Path would answer about whatever folder the app happens to be started in)
+            bool shared = devFromExe || (!string.IsNullOrEmpty(ExeDir) && LegacyLauncher.IsLauncherFolder(ExeDir));
+            string path = shared
+                ? GameFolders.Join(devFromExe ? Src : ExeDir, AppInfo.StateFileName)
+                : Path.Combine(DataDir, AppInfo.StateFileName);
             State = LauncherStateFile.Load(path);
             State.Log = Log.Write;
             // Unreadable: the app's own file IS there, it just could not be read this moment. Taking the old launcher's
             // over now would throw the viewer's own settings and records away (PORT-MAP 13.1).
-            if (shared || State.Found || State.Unreadable) return;
-            string old = null;
-            try { old = LegacyLauncher.FindStateFile(Desktop, readShortcut); }
+            if (shared || State.Unreadable) return;
+            if (!State.Found)
+            {
+                string old = null;
+                try { old = LegacyLauncher.FindStateFile(Desktop, readShortcut) ?? DevStateFile(); }
+                catch (Exception ex) { Log.Write("launcher-state.json: " + ex.Message); }
+                if (old != null) State.MigrateFrom(old, DateTime.Now);
+            }
+            TakeOverDevState();
+        }
+
+        /// <summary>The working copy's own launcher-state.json (null when there is no working copy on this PC).</summary>
+        string DevStateFile()
+        {
+            if (DevFolder == null) return null;
+            string p = GameFolders.Join(DevFolder, AppInfo.StateFileName);
+            return GameFolders.PathExists(p) ? p : null;
+        }
+
+        /// <summary>Written into this file when the carry-over below has been done, so it happens once and a report says
+        /// where the values came from.</summary>
+        const string DevStateMergedFrom = "devStateMergedFrom";
+        const string DevStateMergedAt = "devStateMergedAt";
+
+        /// <summary>Keys that describe where a file's OWN contents came from: carrying them over would make this file
+        /// claim the other file's history.</summary>
+        static readonly string[] NotCarriedOver = { "migratedFrom", "migratedAt", DevStateMergedFrom, DevStateMergedAt };
+
+        /// <summary>v1.5, the other half of the fix above: what the app wrote into the working copy's launcher-state.json
+        /// while developer mode read that file instead of this one is brought over ONCE - only keys this file does not
+        /// have yet, never on top of a value that is already here, and the working copy's file is not changed or
+        /// deleted (the PowerShell launcher keeps reading it). Nothing is written when there is nothing to carry over.
+        /// <para>Why it is needed and not just tidy: lastBuiltGameVersion and modSource live there. Without this, the
+        /// first start after the fix would say 「再ビルドが必要」 for a build that is already in the copy and offer
+        /// 「更新」 for the version that is already installed - the same lie, from the other side.</para>
+        /// <para>Why carrying a record over cannot make the app lie: both modes install into the same folder on this PC
+        /// (developer mode's copy is &lt;working copy&gt;\..\Among Us PocketRoles - the Desktop copy friend mode uses -
+        /// GameFolders.ResolveModded), a key is only ever filled where this file had NO answer at all, and what the page
+        /// shows about the copy is read from the copy itself (InstallInfo.Read), never from these records. The records
+        /// decide one thing each: modSource whether a re-published zip of the same number counts as installed,
+        /// copiedGameVersion whether the game files may be left alone (and only when the copy on disk already has that
+        /// very version), lastBuiltGameVersion whether a rebuild is needed.</para></summary>
+        void TakeOverDevState()
+        {
+            try
+            {
+                string devPath = DevStateFile();
+                if (devPath == null || State.Path == null || State.Str(DevStateMergedFrom) != null) return;
+                if (string.Equals(devPath, State.Path, StringComparison.OrdinalIgnoreCase)) return;
+                var dev = LauncherStateFile.Load(devPath);
+                if (!dev.Found) return;   // there but unreadable this moment: nothing is guessed, another start may read it
+                var have = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var kv in State.All) have.Add(kv.Key);
+                var carry = new Dictionary<string, object>(StringComparer.Ordinal);
+                foreach (var kv in dev.All)
+                    if (!have.Contains(kv.Key) && Array.IndexOf(NotCarriedOver, kv.Key) < 0) carry[kv.Key] = kv.Value;
+                if (carry.Count == 0) return;
+                int taken = carry.Count;
+                carry[DevStateMergedFrom] = devPath;
+                carry[DevStateMergedAt] = LauncherStateFile.Stamp(DateTime.Now);
+                if (State.Update(carry)) Log.Write("launcher-state.json: " + taken + " record(s) taken over from " + devPath);
+            }
             catch (Exception ex) { Log.Write("launcher-state.json: " + ex.Message); }
-            if (old != null) State.MigrateFrom(old, DateTime.Now);
         }
 
         /// <summary>PORT-MAP 3.14.</summary>

@@ -807,7 +807,9 @@ namespace Starpocket.Client.SelfTest
                 r.Check("the release this app installed", o.Kind == ModOrigin.Release && o.Version == "0.5.4" && o.At == "2026-09-24 01:02:03", o.Kind + "|" + o.Version + "|" + o.At);
                 File.WriteAllText(dll, "the old launcher built this");
                 o = ModOriginFile.Read(data, dll);
-                r.Check("the DLL changed under it (the old launcher's build): unknown, never 'release'", o.Kind == ModOrigin.Unknown && o.At == null);
+                // v1.5: この場合は「分からない」ではなく **replaced**（記録があって、指紋が確かに違う）。
+                // 「記録が無い／読めない」（= Unknown）と区別するために分けました。断定するのはこちらだけです。
+                r.Check("the DLL changed under it (the old launcher's build): 'replaced', never 'release'", o.Kind == ModOrigin.Replaced && o.At == null, o.Kind);
                 ModOriginFile.Record(data, dll, ModOrigin.Dev, "0.5.5", when.AddHours(1), null);
                 o = ModOriginFile.Read(data, dll);
                 r.Check("the author's own build", o.Kind == ModOrigin.Dev && o.At == "2026-09-24 02:02:03");

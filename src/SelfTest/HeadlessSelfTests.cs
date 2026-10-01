@@ -26,6 +26,7 @@ namespace Starpocket.Client.SelfTest
         {
             ArgumentTests(r);
             UsageTests(r);
+            ConsoleEncodingTests(r);
             VerifyDownloadTests(r);
             TrapTests(r);
             SignalTests(r);
@@ -252,6 +253,87 @@ namespace Starpocket.Client.SelfTest
                             r.Check("the usage only names options this build has: " + opt, known);
                         }
             });
+        }
+
+        // ------------------------------------------------------------------ the characters of a run with no window
+        // 2026-10-01: the Japanese output of --action, --scan-only and a usage error came out unreadable in a CP932
+        // console (the default of Japanese Windows), because the text was written as UTF-8 BYTES whatever it was going
+        // to. src\Core\ConsoleOut.cs now asks WHERE the text goes: a real console is handed characters (WriteConsoleW -
+        // no code page comes into it), and anything else (a pipe, a file, the build workflow's step) keeps UTF-8
+        // WITHOUT a BOM. That second half is a promise to the build workflow, so it is asserted here, not assumed.
+        //
+        // ConsoleOut.OpenWriter() is NOT called here: it would attach to the console of whoever started the self-test
+        // and write into it. What is checked is the two decisions it makes, which are pure and need no console.
+        static void ConsoleEncodingTests(SelfTestRunner r)
+        {
+            r.Section("headless output characters");
+
+            // Three Japanese characters (U+65E5 U+672C U+8A9E), an em dash (U+2014) and one Chinese character
+            // (U+8BF7). CP932 has room for the first three and none for the other two, which is the whole point of
+            // these tests. The code points are written down beside them: this file is UTF-8 without a BOM like every
+            // other .cs here, and if it were ever saved as something else these three lines are where it would show.
+            const string ja = "日本語";
+            const string dash = "—";
+            const string zh = "请";
+
+            r.Test("redirected output is UTF-8 with no BOM (the build workflow reads it)", () =>
+            {
+                var enc = ConsoleOut.ByteEncoding(0);
+                r.Equal("code page", 65001, enc.CodePage);
+                r.Equal("the encoding carries no BOM", 0, enc.GetPreamble().Length);
+                byte[] wrote = OneLine(enc, ja + dash + zh);
+                r.Check("no BOM in front of the bytes either",
+                    wrote.Length > 3 && !(wrote[0] == 0xEF && wrote[1] == 0xBB && wrote[2] == 0xBF));
+                r.Equal("every character survives", ja + dash + zh + "\r\n", new System.Text.UTF8Encoding(false).GetString(wrote));
+                r.Check("the line ends with CRLF, as a Windows console expects",
+                    wrote[wrote.Length - 2] == 0x0D && wrote[wrote.Length - 1] == 0x0A);
+            });
+
+            r.Test("a code page that was asked for really writes that code page", () =>
+            {
+                var enc = ConsoleOut.ByteEncoding(932);
+                r.Equal("code page", 932, enc.CodePage);
+                r.Equal("no BOM", 0, enc.GetPreamble().Length);
+                byte[] wrote = OneLine(enc, ja);
+                r.Equal("Japanese reads back whole", ja + "\r\n", enc.GetString(wrote));
+                r.Equal("two bytes per character in CP932, not three", 2 * ja.Length + 2, wrote.Length);
+                // what CP932 has no room for becomes "?": it must not throw in the middle of a line, and it must not
+                // take the rest of the line with it (this is the loss the owner was told about - the em dash and the
+                // Chinese strings on a Japanese console, which is why a console gets characters and not bytes)
+                r.Equal("a character CP932 cannot hold becomes ?", "?x?\r\n", enc.GetString(OneLine(enc, dash + "x" + zh)));
+            });
+
+            r.Test("a code page that cannot be used at all ends as UTF-8", () =>
+            {
+                foreach (var cp in new[] { 0, -1, 65001, 999999 })
+                    r.Equal("code page " + cp + " -> UTF-8", 65001, ConsoleOut.ByteEncoding(cp).CodePage);
+                // an encoding whose bytes begin with a BOM is refused: a BOM in the middle of a console line, or at the
+                // top of a CI log, is garbage of its own
+                r.Equal("UTF-16 (1200) is refused for being BOM-first", 65001, ConsoleOut.ByteEncoding(1200).CodePage);
+                r.Equal("and the UTF-8 used here never carries one", 0, ConsoleOut.Utf8NoBom.GetPreamble().Length);
+            });
+
+            r.Test("POCKETROLES_CONSOLE_CP is read strictly (nothing is set here)", () =>
+            {
+                r.Equal("932", 932, ConsoleOut.CodePageFromText("932"));
+                r.Equal("spaces around it", 932, ConsoleOut.CodePageFromText("  932 "));
+                r.Equal("utf8", 65001, ConsoleOut.CodePageFromText("utf8"));
+                r.Equal("UTF-8", 65001, ConsoleOut.CodePageFromText("UTF-8"));
+                foreach (var junk in new string[] { null, "", "   ", "cp932", "0", "-1", "932x", "utf" })
+                    r.Equal("nothing usable: <" + (junk ?? "null") + "> -> 0, the handle decides", 0, ConsoleOut.CodePageFromText(junk));
+            });
+        }
+
+        /// <summary>One line written the way ConsoleOut writes a redirected run - the same writer, the same newline -
+        /// as the bytes that would have left the process.</summary>
+        static byte[] OneLine(System.Text.Encoding enc, string line)
+        {
+            using (var mem = new MemoryStream())
+            {
+                // MemoryStream.ToArray() still answers after the writer closed it
+                using (var w = new StreamWriter(mem, enc) { AutoFlush = true, NewLine = "\r\n" }) w.WriteLine(line);
+                return mem.ToArray();
+            }
         }
 
         // ------------------------------------------------------------------ --verify-download: the words alone

@@ -24,6 +24,7 @@ namespace Starpocket.Client.SelfTest
             VerifyTests(r);
             ReleaseNameTests(r);
             UpdateMessageTests(r);
+            ModCacheTests(r);
             ZipTests(r);
             ForceTests(r);
             CopyTests(r);
@@ -1253,6 +1254,136 @@ namespace Starpocket.Client.SelfTest
             public void Download(string url, string dest, Action<long, long> progress) => throw new IOException("no network in the self-test");
         }
 
+        // ------------------------------------------------------------------ MOD の zip のキャッシュ（%TEMP%）
+        //
+        // 2026-10-01 の不具合: キャッシュのファイル名が rel.AssetName（= "PocketRoles-0.5.5.zip"）だけでした。
+        // 作者が同じ版番号のまま中身を差し替えて出し直すと、名前が同じなので古い zip が使い回され、
+        // それでも launcher-state.json には「新しい方」の AssetKey が書かれるので、
+        // そのあとは永久に「最新です」と出続けます（本人は古い MOD を使い続ける）。
+        // 直した形: キャッシュの名前に AssetKey（名前 + バイト数 + 更新日時）の見分け札を入れる。
+        static void ModCacheTests(SelfTestRunner r)
+        {
+            r.Section("MOD の zip のキャッシュ");
+
+            const string Url = "https://example.invalid/PocketRoles-0.5.5.zip";
+            // 版番号は同じ。違うのは中身（バイト数と更新日時）だけ ―― これが元の不具合の形です
+            const string Key1 = "gh:PocketRoles-0.5.5.zip:1184888:2026-09-23T10:00:08Z";
+            const string Key2 = "gh:PocketRoles-0.5.5.zip:1184901:2026-09-30T22:14:00Z";
+            Func<string, ReleaseInfo> rel = key => new ReleaseInfo
+            {
+                Ok = true,
+                Tag = "v0.5.5",
+                Version = ReleaseInfo.Normalize("0.5.5"),
+                AssetName = "PocketRoles-0.5.5.zip",
+                AssetUrl = Url,
+                AssetKey = key,
+            };
+
+            r.Test("キャッシュの名前は、版が同じでも中身が違えば別になる", () =>
+            {
+                string n1 = Installer.CacheZipName("PocketRoles-0.5.5.zip", Key1);
+                string n2 = Installer.CacheZipName("PocketRoles-0.5.5.zip", Key2);
+                r.Check("同じ鍵なら同じ名前（キャッシュとして使える）", n1 == Installer.CacheZipName("PocketRoles-0.5.5.zip", Key1));
+                r.Check("同じ版番号で中身が違えば別の名前", n1 != n2, n1 + " / " + n2);
+                r.Check("直す前の名前そのものにはならない", n1 != "PocketRoles-0.5.5.zip" && n2 != "PocketRoles-0.5.5.zip");
+                r.Check("版番号は名前に残る（人が見て分かる）", n1.IndexOf("0.5.5", StringComparison.Ordinal) >= 0, n1);
+                r.Check(".zip のまま", n1.EndsWith(".zip", StringComparison.Ordinal), n1);
+                string tag = Installer.CacheTag(Key1);
+                bool hex = tag.Length == 16;
+                foreach (char c in tag) if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) hex = false;
+                r.Check("見分け札は 16 桁の小文字 16 進", hex, tag);
+                r.Check("鍵が違えば札も違う", Installer.CacheTag(Key1) != Installer.CacheTag(Key2));
+                foreach (char c in n1)
+                    if (Array.IndexOf(Path.GetInvalidFileNameChars(), c) >= 0) { r.Fail("名前に使えない文字が入っていない", n1); return; }
+                r.Pass("名前に使えない文字が入っていない");
+            });
+
+            // ここが本体: 同じ版番号で出し直された zip が、古いまま使い回されないこと
+            r.Test("同じ版番号で出し直されたら、キャッシュの古い zip は使われない", () =>
+            {
+                string root = r.NewDir("modcache-stale");
+                string game = Path.Combine(root, "game"), cache = Path.Combine(root, "cache");
+                // 前回（Key1）の zip がキャッシュに残っている状態を作ります。中身は「古い」
+                MakeModZip(Path.Combine(cache, Installer.CacheZipName("PocketRoles-0.5.5.zip", Key1)), "ふるい MOD");
+                var web = new FakeWeb { Payload = ModZipBytes("あたらしい MOD") };
+                var state = LauncherStateFile.InMemory();
+                var inst = new Installer
+                {
+                    Paths = ModPaths.For(game), Src = root, CacheDir = cache,
+                    Web = web, State = state,
+                };
+                string dll = Path.Combine(game, @"BepInEx\plugins\PocketRoles.dll");
+                r.Check("入った", inst.InstallModRelease(rel(Key2), 4));
+                r.Equal("落とし直した（キャッシュを使い回さない）", 1, web.Downloads);
+                r.Equal("入ったのは新しい方", "あたらしい MOD", File.ReadAllText(dll));
+            });
+
+            r.Test("中身が同じ（鍵が同じ）なら、キャッシュを使って落とし直さない", () =>
+            {
+                string root = r.NewDir("modcache-reuse");
+                string game = Path.Combine(root, "game"), cache = Path.Combine(root, "cache");
+                var web = new FakeWeb { Payload = ModZipBytes("1 回目の MOD") };
+                var inst = new Installer
+                {
+                    Paths = ModPaths.For(game), Src = root, CacheDir = cache,
+                    Web = web, State = LauncherStateFile.InMemory(),
+                };
+                string dll = Path.Combine(game, @"BepInEx\plugins\PocketRoles.dll");
+                r.Check("1 回目は入る", inst.InstallModRelease(rel(Key1), 4));
+                r.Equal("1 回落とした", 1, web.Downloads);
+                // 2 回目: 網の方の中身を替えておきます。キャッシュが使われたなら、こちらは届きません
+                web.Payload = ModZipBytes("これは使われてはいけない");
+                Directory.Delete(game, true);
+                r.Check("2 回目も入る", inst.InstallModRelease(rel(Key1), 4));
+                r.Equal("落とし直していない", 1, web.Downloads);
+                r.Equal("キャッシュの方が入っている", "1 回目の MOD", File.ReadAllText(dll));
+            });
+
+            r.Test("片付けるのは自分が付けた名前だけ（PowerShell 版ランチャーの物は触らない）", () =>
+            {
+                string root = r.NewDir("modcache-tidy");
+                string game = Path.Combine(root, "game"), cache = Path.Combine(root, "cache");
+                string old = MakeModZip(Path.Combine(cache, Installer.CacheZipName("PocketRoles-0.5.5.zip", Key1)), "ふるい MOD");
+                // PowerShell 版ランチャーが置く形、setup の zip、別の版 ―― どれも触ってはいけません
+                string ps = SelfTestRunner.Touch(Path.Combine(cache, "PocketRoles-0.5.5.zip"), "PowerShell 版が置いた物");
+                string setup = SelfTestRunner.Touch(Path.Combine(cache, "PocketRoles-0.5.5-setup.zip"), "setup");
+                // 長さは 16 字そろっているが 16 進ではない後ろ書き（長さだけで判断していないことを見ます）
+                string hand = SelfTestRunner.Touch(Path.Combine(cache, "PocketRoles-0.5.5-zzzzzzzzzzzzzzzz.zip"), "16 進ではない");
+                string other = SelfTestRunner.Touch(Path.Combine(cache, "PocketRoles-0.5.4-0123456789abcdef.zip"), "別の版");
+                var web = new FakeWeb { Payload = ModZipBytes("あたらしい MOD") };
+                var inst = new Installer
+                {
+                    Paths = ModPaths.For(game), Src = root, CacheDir = cache,
+                    Web = web, State = LauncherStateFile.InMemory(),
+                };
+                r.Check("入った", inst.InstallModRelease(rel(Key2), 4));
+                r.Check("同じ配布物名で鍵だけ違う古い物は消える", !File.Exists(old));
+                r.Check("鍵なしの名前は残る", File.Exists(ps));
+                r.Check("setup の zip は残る", File.Exists(setup));
+                r.Check("16 進でない後ろ書きは残る", File.Exists(hand));
+                r.Check("別の版は残る", File.Exists(other));
+                r.Check("今入れた物は残る", File.Exists(Path.Combine(cache, Installer.CacheZipName("PocketRoles-0.5.5.zip", Key2))));
+            });
+        }
+
+        /// <summary>MOD の zip の形（インストーラーが探す 1 つの入り口を持つ）を、ばらばらの中身で作ります。</summary>
+        static byte[] ModZipBytes(string dllText)
+        {
+            using (var ms = new MemoryStream())
+            {
+                using (var z = new ZipArchive(ms, ZipArchiveMode.Create, true)) Entry(z, "BepInEx/plugins/PocketRoles.dll", dllText);
+                return ms.ToArray();
+            }
+        }
+
+        static string MakeModZip(string path, string dllText)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            if (File.Exists(path)) File.Delete(path);
+            File.WriteAllBytes(path, ModZipBytes(dllText));
+            return path;
+        }
+
         // ------------------------------------------------------------------ unpacking
         static void ZipTests(SelfTestRunner r)
         {
@@ -1291,6 +1422,34 @@ namespace Starpocket.Client.SelfTest
                 r.Check("after a whole unpacking, nothing is flagged", !inst.ExtractionWasInterrupted());
                 SelfTestRunner.Touch(inst.ExtractMarkerPath, "left behind by a run that was killed");
                 r.Check("a marker that stayed means the files cannot be trusted", inst.ExtractionWasInterrupted());
+            });
+
+            // 2026-10-01 の不具合: 目印を finally で消していたので、展開が途中で落ちても消えていました。
+            // つまり半分だけ展開された BepInEx が、次の起動で「入っている」ことになっていました。
+            r.Test("展開が途中で失敗したら、目印は消えずに残る", () =>
+            {
+                string root = r.NewDir("marker-fail");
+                string game = Path.Combine(root, "game");
+                string broken = SelfTestRunner.Touch(Path.Combine(root, "broken.zip"), "これは zip ではありません");
+                var inst = new Installer { Paths = ModPaths.For(game), Src = root, CacheDir = Path.Combine(root, "cache"), Web = new NoWeb(), State = LauncherStateFile.InMemory() };
+                bool threw = false;
+                try { inst.Expand(broken, new string[0]); } catch (Exception) { threw = true; }
+                r.Check("壊れた zip では例外になる", threw);
+                r.Check("目印は残る（次回は版に関係なく入れ直す）", inst.ExtractionWasInterrupted());
+            });
+
+            // 消してよいのは「自分が置いた目印」だけ。前回の中断の記録を、別の展開の成功で消してしまうと、
+            // 半分だけ入った BepInEx がそのまま「入っている」ことになります。
+            r.Test("前回の中断の目印は、別の展開が成功しても消えない", () =>
+            {
+                string root = r.NewDir("marker-keep");
+                string game = Path.Combine(root, "game");
+                string zip = Path.Combine(root, "ok.zip");
+                using (var z = ZipFile.Open(zip, ZipArchiveMode.Create)) Entry(z, "x.txt", "x");
+                var inst = new Installer { Paths = ModPaths.For(game), Src = root, CacheDir = Path.Combine(root, "cache"), Web = new NoWeb(), State = LauncherStateFile.InMemory() };
+                SelfTestRunner.Touch(inst.ExtractMarkerPath, "前回の展開が途中で終わった");
+                r.Equal("展開そのものは成功する", 1, inst.Expand(zip, new string[0]));
+                r.Check("自分が置いた目印ではないので残る", inst.ExtractionWasInterrupted());
             });
         }
 

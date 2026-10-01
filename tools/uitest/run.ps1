@@ -15,6 +15,8 @@
 #
 # Every language (ja / zh / en) is run in both themes. Prints "PASS name" / "FAIL name: why" and
 # "RESULT PASS n/n"; the exit code is 0 only when everything passed.
+# A run that checked nothing is a FAIL, never a pass: every language x theme must bring a list of checks back, so a
+# broken test says so instead of printing a green line with no checks behind it.
 # -Shots writes a PNG of the game page and of the settings page (ja, both themes, plus the colour picker).
 param(
     [ValidateSet('all', 'base')][string]$Group = 'all',
@@ -80,6 +82,9 @@ $serverJob = Start-Job -ScriptBlock $serve -ArgumentList $Port, $ui
 Start-Sleep -Milliseconds 900
 
 $pass = 0; $fail = 0
+# how many of the language x theme runs actually brought a list of checks back. "0 checks, all green" is the one answer
+# this test must never give, so this is counted and compared with how many runs there should have been.
+$ran = 0
 function Line([string]$s) { Write-Output $s }
 
 $profDir = Join-Path $work 'profile'
@@ -90,17 +95,35 @@ $edgeArgs = @(
     # every name but the loopback file server fails to resolve: this test can reach nothing at all (quoted, the value
     # has spaces in it and Start-Process would otherwise split it and Edge would refuse to start)
     '"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"',
-    "--user-data-dir=$profDir", "--remote-debugging-port=0", '--window-size=1280,860', 'about:blank')
-$proc = Start-Process -FilePath $edge -PassThru -WindowStyle Hidden -ArgumentList $edgeArgs
-$devPortFile = Join-Path $profDir 'DevToolsActivePort'
-$devPort = 0
-for ($i = 0; $i -lt 100 -and $devPort -eq 0; $i++) {
-    Start-Sleep -Milliseconds 200
-    if (Test-Path $devPortFile) { try { $devPort = [int]((Get-Content $devPortFile)[0]) } catch { } }
-}
-if ($devPort -eq 0) { throw 'headless Edge did not start' }
+    # quoted for the same reason, and this one is not optional: TEMP itself can have a space in it
+    # ("C:\Users\First Last\AppData\Local\Temp\..."), Start-Process (5.1) joins the list with spaces without quoting
+    # anything, so Edge was handed "--user-data-dir=C:\Users\First" plus a stray word, refused the command line, and
+    # not one check ran.
+    ('"--user-data-dir=' + $profDir + '"'),
+    "--remote-debugging-port=0", '--window-size=1280,860', 'about:blank')
 
+# Edge is started inside the try: a start that goes wrong must still take the profile, the temp folder and the file
+# server down with it. (Before, the throw below sat outside the try, so the finally never ran and a broken run left its
+# temp folder - and, on a machine where Edge got far enough to live, a headless Edge - behind.)
+$proc = $null
 try {
+    $proc = Start-Process -FilePath $edge -PassThru -WindowStyle Hidden -ArgumentList $edgeArgs
+    $devPortFile = Join-Path $profDir 'DevToolsActivePort'
+    $devPort = 0
+    for ($i = 0; $i -lt 100 -and $devPort -eq 0; $i++) {
+        Start-Sleep -Milliseconds 200
+        if (Test-Path -LiteralPath $devPortFile) { try { $devPort = [int]((Get-Content -LiteralPath $devPortFile)[0]) } catch { } }
+    }
+    if ($devPort -eq 0) {
+        # no profile folder at all means Edge threw the whole command line away (an unquoted argument with a space in
+        # it is the usual reason), which is worth saying out loud instead of only "did not start"
+        if (-not (Test-Path -LiteralPath $profDir)) {
+            throw ("headless Edge refused its command line: no profile was made in '" + $profDir + "'" +
+                " / Edge が引数を受け取れていません（道に空白があるときの引用符を見てください）")
+        }
+        throw ("headless Edge did not start: no DevToolsActivePort in '" + $profDir + "'")
+    }
+
     $list = $null
     for ($i = 0; $i -lt 50 -and -not $list; $i++) { Start-Sleep -Milliseconds 200; try { $list = Invoke-RestMethod "http://127.0.0.1:$devPort/json/list" } catch { } }
     $page = @($list | Where-Object { $_.type -eq 'page' })[0]
@@ -202,10 +225,22 @@ window.__emit = m => window.__listeners.forEach(f => f({ data: m }));
             $json = EvalValue ('window.__spChecks(' + (ConvertTo-Json $Group -Compress) + ', ' + (ConvertTo-Json $mode.n -Compress) + ').then(r => JSON.stringify(r))')
             if (-not $json) { Line ("FAIL [" + $lang + "/" + $scheme + "] the checks did not run"); $fail++; continue }
             $rows = $json | ConvertFrom-Json
+            # The rows are counted here, while they are being printed, and not with @($json | ConvertFrom-Json).Count:
+            # in 5.1 ConvertFrom-Json hands the whole array down the pipeline as ONE object, so @() would wrap it a
+            # second time and every row of this run would read as a single row.
+            $rowsSeen = 0
             foreach ($row in $rows) {
+                if ($null -eq $row) { continue }
+                $rowsSeen++
                 if ($row.ok) { $pass++; Line ("PASS [" + $lang + "/" + $scheme + "] " + $row.n) }
                 else { $fail++; Line ("FAIL [" + $lang + "/" + $scheme + "] " + $row.n + ": " + $row.why) }
             }
+            # an empty list is a failure of this run, not a pass: the page answered, but nothing was looked at
+            if ($rowsSeen -eq 0) {
+                Line ("FAIL [" + $lang + "/" + $scheme + "] 検査が 0 件でした / the check list came back empty")
+                $fail++; continue
+            }
+            $ran++
 
             # pictures of the game page and of Settings → 全般, in Japanese, light and dark. -Ui lets an older build be
             # pictured the same way for comparison; anything that build does not have is simply skipped.
@@ -256,13 +291,30 @@ window.__emit = m => window.__listeners.forEach(f => f({ data: m }));
     $ws.Dispose()
 } finally {
     if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -Confirm:$false -ErrorAction SilentlyContinue }
-    Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like "*$profDir*" } |
+    # the profile path is escaped before it is used as a -like pattern: a temp path with a bracket in it would otherwise
+    # match nothing here, and the headless Edge would be left running
+    $profPat = '*' + [Management.Automation.WildcardPattern]::Escape($profDir) + '*'
+    Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like $profPat } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue }
     if ($serverJob) { Stop-Job $serverJob -ErrorAction SilentlyContinue; Remove-Job $serverJob -Force -ErrorAction SilentlyContinue }
     try { Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue } catch { }
 }
 
+# 0 件で成功は、検査が死んでいることに気づけない一番悪い形なので、ここで必ず止めます。
+# Nothing checked is a FAIL, and so is "some of the nine runs checked nothing": a green line with no checks behind it
+# would hide a broken test for as long as nobody looked.
 $total = $pass + $fail
+if ($total -eq 0) {
+    Line 'FAIL [all] 検査が 1 件も走りませんでした / no check ran at all - this test is broken, not passing'
+    Line 'RESULT FAIL 1/1'
+    exit 1
+}
+$want = $langs.Count * $modes.Count
+if ($ran -lt $want) {
+    Line ("FAIL [all] " + $want + " 通り（言語 x テーマ）のうち " + $ran + " 通りしか検査が走っていません / only " + $ran +
+        " of " + $want + " language-theme runs checked anything")
+    $fail++; $total++
+}
 if ($fail -eq 0) { Line "RESULT PASS $total/$total"; exit 0 }
 Line "RESULT FAIL $fail/$total"
 exit 1

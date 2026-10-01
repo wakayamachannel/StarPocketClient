@@ -153,8 +153,10 @@ namespace Starpocket.Client.Core
                     // the app is closing while the install waited for Steam: no words and no "not found" (nothing was
                     // copied wrong; the next start carries on)
                     if (Cancelled()) return new TaskOutcome { Cancelled = true, Error = "" };
-                    Log(T("in_steam_notfound"));
-                    return new TaskOutcome { NeedGame = true, Error = T("in_steam_notfound") };
+                    // Store / Xbox 版を持っている人には別の文を出します（StoreGame.cs。選べないフォルダを選べと言わないため）
+                    string why = T(StoreGame.NoGameKey());
+                    Log(why);
+                    return new TaskOutcome { NeedGame = true, Error = why };
                 }
                 Log(T("in_steam_found", steam));
                 Step(1, 1);
@@ -844,7 +846,7 @@ namespace Starpocket.Client.Core
                 if (GameRunning()) { Log(T("game_running")); return TaskOutcome.Bad(T("game_running")); }
                 string steam = SteamDir();
                 if (string.IsNullOrEmpty(steam) || !GameFolders.PathExists(GameFolders.Join(steam, "Among Us.exe"))) steam = FindSteam();
-                if (steam == null) { Log(T("in_steam_notfound")); return new TaskOutcome { NeedGame = true, Error = T("in_steam_notfound") }; }
+                if (steam == null) { string why = T(StoreGame.NoGameKey()); Log(why); return new TaskOutcome { NeedGame = true, Error = why }; }
                 SetSteamDir(steam);
                 State.Set("steamDir", steam);
                 Log(T("sync_start"));

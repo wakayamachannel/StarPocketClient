@@ -171,8 +171,10 @@ namespace Starpocket.Client.Core
                 string steam = SteamDir();
                 if (string.IsNullOrEmpty(steam) || !GameFolders.PathExists(GameFolders.Join(steam, "Among Us.exe")))
                 {
-                    Log(T("in_steam_notfound"));
-                    return new TaskOutcome { NeedGame = true, Error = T("in_steam_notfound") };
+                    // Store / Xbox 版を持っている人には別の文（StoreGame.cs）
+                    string why = T(StoreGame.NoGameKey());
+                    Log(why);
+                    return new TaskOutcome { NeedGame = true, Error = why };
                 }
                 if (!SteamRunning()) { Log(T("dev_need_steam")); return TaskOutcome.Bad(T("dev_need_steam")); }
 

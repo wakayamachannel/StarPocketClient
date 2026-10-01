@@ -112,6 +112,9 @@ namespace Starpocket.Client.Core
                 ["in_step5"] = "[5/5] 状態を保存...",
                 ["in_steam_found"] = "Steam 版: {0}",
                 ["in_steam_notfound"] = "Steam 版の Among Us が見つかりません。Among Us.exe があるフォルダを選んでください。",
+                // 2026-10-01: Microsoft Store / Xbox 版を持っている人に、できないことを「やってください」と
+                // 言わないための文。フォルダを選べと言われても、その人に選べるフォルダはありません。
+                ["in_store_only"] = "Microsoft Store / Xbox 版の Among Us が入っています。この MOD は Steam 版（Windows）にしか入れられません。\nでも、あなたは今のゲームのまま遊べます。この MOD は部屋を作る人だけが入れる物なので、Steam 版のホストに部屋コードをもらえば、いつもの Among Us で入れます（地域とゲームの版をホストに合わせてください）。\n自分で部屋を作りたい場合だけ、Steam 版が必要です。",
                 ["in_pick"] = "Among Us.exe があるフォルダ (Steam 版) を選んでください",
                 ["dev_pick"] = "PocketRoles のソースのフォルダを選んでください (PocketRoles.csproj と PocketRolesLauncher.ps1 があるフォルダ)",
                 ["dev_pick_bad"] = "そのフォルダは PocketRoles のソースではありません。PocketRoles.csproj と PocketRolesLauncher.ps1 の両方があるフォルダを選んでください。",
@@ -409,6 +412,7 @@ namespace Starpocket.Client.Core
                 ["in_step5"] = "[5/5] 保存状态...",
                 ["in_steam_found"] = "Steam 版: {0}",
                 ["in_steam_notfound"] = "未找到 Steam 版 Among Us。请选择包含 Among Us.exe 的文件夹。",
+                ["in_store_only"] = "检测到 Microsoft Store / Xbox 版的 Among Us。本模组只能安装在 Steam 版（Windows）上。\n不过你用现在的游戏就能一起玩。这个模组只有房主需要安装，所以只要向 Steam 版的房主要房间代码，用平时的 Among Us 就能加入（区域和游戏版本要和房主一致）。\n只有想自己当房主时，才需要 Steam 版。",
                 ["in_pick"] = "请选择包含 Among Us.exe 的文件夹 (Steam 版)",
                 ["dev_pick"] = "请选择 PocketRoles 的源代码文件夹 (含 PocketRoles.csproj 与 PocketRolesLauncher.ps1 的文件夹)",
                 ["dev_pick_bad"] = "该文件夹不是 PocketRoles 的源代码。请选择同时含有 PocketRoles.csproj 与 PocketRolesLauncher.ps1 的文件夹。",
@@ -691,6 +695,7 @@ namespace Starpocket.Client.Core
                 ["in_step5"] = "[5/5] Saving state...",
                 ["in_steam_found"] = "Steam copy: {0}",
                 ["in_steam_notfound"] = "Steam Among Us not found. Please pick the folder that contains Among Us.exe.",
+                ["in_store_only"] = "You have the Microsoft Store / Xbox version of Among Us. This mod can only be installed on the Steam version (Windows).\nYou can still play with the game you have: only the person hosting the room installs this mod, so ask a Steam host for the room code and join with your usual Among Us (your region and game version have to match the host's).\nYou only need the Steam version if you want to host rooms yourself.",
                 ["in_pick"] = "Select the folder that contains Among Us.exe (Steam version)",
                 ["dev_pick"] = "Select the PocketRoles source folder (the one with PocketRoles.csproj and PocketRolesLauncher.ps1)",
                 ["dev_pick_bad"] = "That folder is not the PocketRoles source. Pick the folder that has BOTH PocketRoles.csproj and PocketRolesLauncher.ps1.",

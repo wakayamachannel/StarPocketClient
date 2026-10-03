@@ -792,7 +792,7 @@ namespace Starpocket.Client.Shell
                 case "syncSteam": DoTask(id, cmd, i => i.SyncGameCopy()); break;
                 case "checkUpdate": DoTask(id, cmd, i => i.CheckUpdate(Json.Bool(inv.Args, "install")), Json.Bool(inv.Args, "install")); break;
                 case "pickSteam": Reply(id, PickSteam()); break;
-                case "pickModSource": Reply(id, PickModSource()); break;   // v1.4: 開発モードのソースのフォルダ
+                case "pickModSource": DoPickModSource(id); break;   // v1.4: 開発モードのソースのフォルダ（2026-10-03: 選んだらその場で開き直す）
                 case "aegis.rescan": RunScan(false, r => Reply(id, r)); break;
                 case "aegis.scanOnly": RunScan(true, r => Reply(id, r)); break;
                 case "aegis.events": Reply(id, OpenInNotepad(aegis.EventsLogPath, "events.log")); break;
@@ -1532,30 +1532,95 @@ namespace Starpocket.Client.Shell
         /// <see cref="DevSource.IsDevFolder"/> says the working copy really is there (both PocketRoles.csproj and
         /// PocketRolesLauncher.ps1). It is remembered in their own settings.json beside the switch that still has to be
         /// on, so it needs no trust the switch did not already need. The mode itself is settled once at start
-        /// (ClientContext.Detect), so this takes effect the next time the app is opened - said in the reply.</para>
+        /// (ClientContext.Detect).</para>
+        /// <para>2026-10-03（持ち主 11:48「クライアントでフォルダ選んべない」）: 選んだ後は、開発の切り替え（<see cref="SetDevBuild"/>）や
+        /// 「場所を変える」（<see cref="DoMoveCopy"/>）と同じく、**その場で開き直す**（Program.RestartForDevSwitch）。前は settings.json に
+        /// 書いて「次にアプリを開いたときから」と返すだけだったが、(1) 閉じるとトレイにしまう設定の人には「次に開く」が来ないので、選んでも
+        /// 「置き場所:」も「再ビルド」も変わらないように見えた、(2) ページはその返事を画面に出していなかった（ok の返事は report() が黙って
+        /// 通す）ので、押しても何も起きないボタンに見えた。
+        /// その場で差し替えないのは、開発モードでは置き場所がコピーの場所（&lt;置き場所&gt;\..\Among Us PocketRoles、GameFolders.ResolveModded）
+        /// も決め、Aegis・MOD のコピーの見張り・起動の道具・launcher-state.json の読み先が起動時にそれを覚えるため（DoMoveCopy が開き直す
+        /// 理由と同じ。友達モードでも、同じ 1 本の道にしておく）。断る時: ゲームの起動中（game_running。Aegis が見ている）・長い作業の最中
+        /// （busy。再ビルドの途中で閉じない。TryBeginTask は SPEC 5.1 の鍵も取る）。どちらもフォルダ選択を**開く前**に断る（選ばせた後で断らない）。
+        /// 選んだ後にどうするかは 1 つの表 <see cref="PickModSourceOutcome"/>（自己点検が回す。崩す係 5）: 選んでいる間にゲームが始まっていたら
+        /// もう一度断る（崩す係 3。DoMoveCopy と同じ）、今の「置き場所:」と同じフォルダなら設定に書くだけで開き直さない（dev_pick_same）。
+        /// 選ぶのをやめた時は {ok, cancelled}（error が空の Fail だと画面は「失敗しました」と言う）。
+        /// 開き直す時の返事は DoMoveCopy と同じ {restart:true, text}（ページは知らせに出さない。崩す係 8: 知らせと箱に同じ文が 2 回出ていた）で、
+        /// 返事を送ってから「〜にしました。開き直します」の箱を出し、OK で閉じて開き直す。Shutdown は 1 つ目の合図（SingleInstance）を先に
+        /// 手放すので、次の起動は普通の最初の起動になる。言葉に入れるフォルダは「置き場所:」と同じく %USERPROFILE% の形（Shown。崩す係 2:
+        /// 配信中に Windows のユーザー名を映さない）。箱が出ている間にトレイの「終了」が押された時は終了が勝つ（崩す係 9。設定はもう書いてある）。</para>
         /// </summary>
-        Dictionary<string, object> PickModSource()
+        void DoPickModSource(string id)
         {
-            string picked;
-            using (var dlg = new FolderBrowserDialog { Description = S.T(ctx.Lang, "dev_pick"), ShowNewFolderButton = false })
+            if (gameRunning || Processes.GameRunning()) { Reply(id, Bridge.Fail(S.T(ctx.Lang, "game_running"))); return; }
+            if (!TryBeginTask("pickModSource")) { Reply(id, Bridge.Busy()); return; }
+            bool restart = false;
+            try
             {
-                if (dlg.ShowDialog(form) != DialogResult.OK) return Bridge.Fail("");
-                picked = dlg.SelectedPath;
+                string picked;
+                using (var dlg = new FolderBrowserDialog { Description = S.T(ctx.Lang, "dev_pick"), ShowNewFolderButton = false })
+                {
+                    // 今の置き場所から開く（前は毎回「PC」の一番上からだった）
+                    try { if (!string.IsNullOrEmpty(ctx.DevFolder) && Directory.Exists(ctx.DevFolder)) dlg.SelectedPath = ctx.DevFolder; } catch (Exception) { }
+                    if (dlg.ShowDialog(form) != DialogResult.OK) { Reply(id, Bridge.Ok(new Dictionary<string, object> { ["cancelled"] = true })); return; }
+                    picked = dlg.SelectedPath;
+                }
+                // 選んでいる間にゲームが始まっていないか、もう一度（Aegis が見ている間に開き直さない）。断る・書くだけ・開き直す、は表で決める
+                string outcome = PickModSourceOutcome(gameRunning || Processes.GameRunning(), DevSource.IsDevFolder(picked), DevSource.SameFolder(picked, ctx.DevFolder));
+                if (!PickModSourceSaves(outcome)) { Reply(id, Bridge.Fail(S.T(ctx.Lang, outcome))); return; }
+                string shown = Shown(picked);
+                string before = ctx.Settings.DevSourcePath;
+                ctx.Settings.SetDevSourcePath(picked);
+                // 2026-10-03（崩す係 11）: ほかの保存と同じ道（SaveSettings）。読めなかった回は set_unreadable の文、書けなければ err の文（英語の例外の文をそのまま出さない）
+                var saved = SaveSettings();
+                if (!(saved["ok"] is bool ok && ok)) { ctx.Settings.SetDevSourcePath(before); ctx.Log.Write("devSource: could not save"); Reply(id, saved); return; }
+                if (!PickModSourceReopens(outcome))
+                {
+                    ctx.Log.Write("devSource: " + picked + " (the folder already in use; nothing to reopen for)");
+                    Reply(id, Bridge.Ok(new Dictionary<string, object> { ["path"] = shown, ["restart"] = false, ["message"] = S.T(ctx.Lang, outcome, shown) }));
+                    return;
+                }
+                string text = S.T(ctx.Lang, outcome, shown);
+                ctx.Log.Write("devSource: " + picked + "; the app closes and starts again");
+                Reply(id, Bridge.Ok(new Dictionary<string, object> { ["path"] = shown, ["restart"] = true, ["text"] = text }));
+                restart = true;
+                MessageBox.Show(form, text, AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-            if (!DevSource.IsDevFolder(picked))
-                return Bridge.Fail(S.T(ctx.Lang, "dev_pick_bad"));
-            string before = ctx.Settings.DevSourcePath;
-            ctx.Settings.SetDevSourcePath(picked);
-            // 2026-10-03（崩す係 11）: ほかの保存と同じ道（SaveSettings）。読めなかった回は set_unreadable の文、書けなければ err の文（英語の例外の文をそのまま出さない）
-            var saved = SaveSettings();
-            if (!(saved["ok"] is bool ok && ok)) { ctx.Settings.SetDevSourcePath(before); ctx.Log.Write("devSource: could not save"); return saved; }
-            ctx.Log.Write("devSource: " + picked);
-            return Bridge.Ok(new Dictionary<string, object>
+            finally
             {
-                ["path"] = picked,
-                ["message"] = S.T(ctx.Lang, "dev_pick_ok", picked),
-            });
+                if (restart)
+                {
+                    autoScanPending = null;   // 開き直すので、待たせていたスキャンは要らない
+                    EndTask();
+                    // 箱が出ている間にトレイの「終了」が来ていたら（quitting / quitFading）、その終了が勝つ: 開き直さない（設定はもう書いてある。次に開いた時はそのフォルダ）
+                    if (!quitting && !quitFading)
+                    {
+                        RestartWhy = "the source folder was picked";
+                        PendingRestart = true;
+                        Post(() => Shutdown());
+                    }
+                    else ctx.Log.Write("devSource: quit was asked for while the box was up; not reopening");
+                }
+                else EndTask();
+            }
         }
+
+        /// <summary>2026-10-03（崩す係 5）: 置き場所を選んだ後にどうするか、表の 1 行として（<see cref="DevSwitchRefusal"/> と同じ形。自己点検が
+        /// 全部の組み合わせを回す）。返す鍵はそのまま言葉の鍵: game_running（選んでいる間にゲームが始まった。断る・書かない）、dev_pick_bad
+        /// （ソースのフォルダではない。断る・書かない）、dev_pick_same（今の置き場所と同じ。設定に書くだけ、開き直さない）、dev_pick_ok
+        /// （設定に書いて、開き直す）。</summary>
+        internal static string PickModSourceOutcome(bool gameRunning, bool isDevFolder, bool sameFolder)
+        {
+            if (gameRunning) return "game_running";
+            if (!isDevFolder) return "dev_pick_bad";
+            return sameFolder ? "dev_pick_same" : "dev_pick_ok";
+        }
+
+        /// <summary>その答えで設定（settings.json の devSource）に書くか: dev_pick_ok と dev_pick_same。ほかは断りで、何も書かない。</summary>
+        internal static bool PickModSourceSaves(string outcome) => outcome == "dev_pick_ok" || outcome == "dev_pick_same";
+
+        /// <summary>その答えで開き直すか: dev_pick_ok だけ。</summary>
+        internal static bool PickModSourceReopens(string outcome) => outcome == "dev_pick_ok";
 
         // ------------------------------------------------------------------ MOD 用のコピーの場所（2026-10-01、CopyPlace.cs / CopyMover.cs）
         /// <summary>画面とログに出す形（ユーザーのフォルダは %USERPROFILE%。配信中にユーザー名を映さない）。</summary>
@@ -1707,9 +1772,14 @@ namespace Starpocket.Client.Shell
                 {
                     autoScanPending = null;   // 開き直すので、待たせていたスキャンは要らない
                     EndTask();
-                    RestartWhy = "the mod copy moved";
-                    PendingRestart = true;
-                    Post(() => Shutdown());
+                    // 2026-10-03（崩す係 9）: 箱が出ている間にトレイの「終了」が来ていたら（quitting / quitFading）、その終了が勝つ: 開き直さない（移動と設定はもう済んでいる）
+                    if (!quitting && !quitFading)
+                    {
+                        RestartWhy = "the mod copy moved";
+                        PendingRestart = true;
+                        Post(() => Shutdown());
+                    }
+                    else ctx.Log.Write("move copy: quit was asked for while the box was up; not reopening");
                 }
                 else
                 {
@@ -1860,7 +1930,7 @@ namespace Starpocket.Client.Shell
         /// <summary>Set when the developer switch was flipped: <see cref="Program"/> starts the app again once this one is gone.</summary>
         public bool PendingRestart { get; private set; }
 
-        /// <summary>2026-10-01: 開き直す理由（client.log 用）。開発の切り替えと、MOD 用のコピーの場所の変更の 2 つ。</summary>
+        /// <summary>2026-10-01: 開き直す理由（client.log 用）。開発の切り替え・MOD 用のコピーの場所の変更・（2026-10-03）開発の置き場所を選んだ、の 3 つ。</summary>
         public string RestartWhy { get; private set; } = "developer switch";
 
         /// <summary>settings.json を書く。2026-10-03（公開前の粗探し 2）: 起動時に読めなかった回は書かずに set_unreadable の文で断る。

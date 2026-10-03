@@ -2806,13 +2806,13 @@ const TOOLS = [
  ]}
 ];
 /* the other two: pickSteam → "Among Us location", syncSteam → "Repair" (both on the PocketRoles page) */
-const EXTRA_LABEL = { pickSteam:{ja:'Among Us の場所',zh:'Among Us 的位置',en:'Among Us location'}, syncSteam:{ja:'MOD 用のコピーを直す',zh:'修复模组用副本',en:'Repair the mod copy'}, moveCopy:{ja:'MOD 用のコピーの場所',zh:'模组用副本的位置',en:'Mod copy location'} };
+const EXTRA_LABEL = { pickSteam:{ja:'Among Us の場所',zh:'Among Us 的位置',en:'Among Us location'}, syncSteam:{ja:'MOD 用のコピーを直す',zh:'修复模组用副本',en:'Repair the mod copy'}, moveCopy:{ja:'MOD 用のコピーの場所',zh:'模组用副本的位置',en:'Mod copy location'}, pickModSource:{ja:'開発の置き場所',zh:'开发用的存放位置',en:'Developer folder'} };
 const cmdLabel = cmd => { for (const g of TOOLS) for (const i of g.items) if (i.cmd === cmd) return L(i.t); return EXTRA_LABEL[cmd] ? L(EXTRA_LABEL[cmd]) : cmd; };
 
 /* ---------- bridge to the C# host (WebView2) ---------- */
 /* Every invoke resolves exactly once: with the host's result, or {ok:false, timeout:true} when the host stays silent.
    Long tasks answer only when they finish (progress comes as events), so they get a long timeout. */
-const LONG_CMDS = new Set(['install', 'launch', 'launchWindowed', 'launchVanilla', 'checkUpdate', 'syncSteam', 'rebuild', 'devUpdate', 'makeReport', 'exportOne', 'uninstall', 'pickSteam', 'moveCopy', 'aegis.rescan', 'aegis.scanOnly', 'profile.pickImage']);
+const LONG_CMDS = new Set(['install', 'launch', 'launchWindowed', 'launchVanilla', 'checkUpdate', 'syncSteam', 'rebuild', 'devUpdate', 'makeReport', 'exportOne', 'uninstall', 'pickSteam', 'moveCopy', 'pickModSource', 'aegis.rescan', 'aegis.scanOnly', 'profile.pickImage']);
 /* how long the page waits for an answer; the UI test shortens these so it can watch what a wait that runs out does */
 const INVOKE_MS = { long:30 * 60 * 1000, short:15 * 1000 };
 const pending = new Map();
@@ -2904,6 +2904,16 @@ const FLOW = {
   'syncSteam': () => { closeAll(); show('game'); runTask('sync'); },
   'devUpdate': () => { closeAll(); show('game'); runTask('devUpdate'); },
   'rebuild': () => { closeAll(); show('game'); runTask('rebuild'); },
+  /* 2026-10-03（持ち主「クライアントでフォルダ選んべない」）: 開発の置き場所を選んだ答えは、今まで画面に出ていなかった（ok の答えは
+     report() が黙って通す）。開き直さない答え（同じフォルダ: data.message「今も〜です」）は、アプリの言葉をそのまま知らせに出す。
+     開き直す答え（data.restart と data.text）は moveCopy と同じで、アプリが自分の箱で知らせてから閉じて開き直すので、ここでは何も出さない
+     （同じ文が 2 回出ないように）。選ぶのをやめた時（data.cancelled）は何も言わない。断り（error）は report() がアプリの言葉で出す。
+     フォルダ選択の窓は長く迷えるので LONG_CMDS に入れてある（15 秒で「応答がありません」と言わない。pickSteam・moveCopy と同じ）。
+     ページは場所を渡さない（命令の名前だけ）。プロトタイプでは host() が見本の知らせを出す。 */
+  'pickModSource': async () => {
+    const r = await host('pickModSource', {});
+    if (r.ok && !r.prototype && r.data && r.data.message && !r.data.restart) toast(String(r.data.message));
+  },
   'aegis.rescan': () => { closeAll(); openLayer('d-aegis'); setTimeout(runScan, RM.matches ? 0 : 320); }
 };
 /* external pages: the host opens them from its own allow-list; the UI only names the target */

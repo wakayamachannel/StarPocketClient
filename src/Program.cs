@@ -358,7 +358,8 @@ namespace Starpocket.Client
         /// (ReleaseEarly), so the new process is a plain first start; it reads settings.json and comes up in the mode
         /// the switch asked for. No arguments are passed (ShellOpen.Self). A restart that cannot be started is written
         /// to the log and ends with 1 - the switch itself is already saved, so the next start by hand is in the new mode.</summary>
-        /// <summary>The app opens again: the developer switch, or (2026-10-01) the mod copy moved to another folder.</summary>
+        /// <summary>The app opens again: the developer switch, (2026-10-01) the mod copy moved to another folder, or (2026-10-03) the
+        /// developer's source folder was picked in Settings (ClientApp.DoPickModSource).</summary>
         static int RestartForDevSwitch(ClientContext ctx, string why = "developer switch")
         {
             try

@@ -170,6 +170,33 @@ window.__spChecks = async function(group, mode){
   /* アプリの中では右の欄の一覧が空（見本の人は出さない）ので要素が無い: 無ければそれで良い */
   if ($('.cname small')) seen('.cname small', el => ratioAtLeast('the small text in the right column reads', ratio(textOn(el), bgOf(el)), 4.5), 'the small text in the right column reads');
   else add('the small text in the right column reads', true, 'the list is empty inside the app');
+  /* 2026-10-03（持ち主の写真: 1.0.0 の画面で「まだ記録はありません」が 1 文字ずつ縦に並んだ。配った 1.0.0 の ui\index.html は .cempty が
+     表の行（26 px の絵の列）のままだった）: 右の欄の空の文は 1 行の文として横に出る。測るのは**文字の並び**（Range）の箱で、li の箱ではない
+     （崩す係 7: li は 236 px あるのに、文字は 26 px の列に入っていた。li の幅を測った点検は 1.0.0 の崩れを見逃した）。文字の並びの幅が
+     文字 1 つ分の 3 倍より広く（26 px の列には日本語が 2 文字入るので、2 倍では ja の崩れを見逃した）、行は 2 行まで、表（grid）の行では
+     ない。英語は単語が折れないので幅の点検は通ってしまうが、行数と grid の点検が見つける（1.0.0 の形の写しで確かめた）。
+     欄は開いた状態で見る（1280 px では開いて始まるが、念のため開く）。 */
+  if (SR.panel) SR.panel('open');
+  await tick();
+  seen('#clist .cempty', el => {
+    const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const tr = range.getBoundingClientRect();   /* the box of the letters themselves, wherever the layout put them */
+    const probe = document.createElement('span');
+    probe.textContent = [...(el.textContent || 'x')][0];
+    probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:nowrap;font:' + cs.font;
+    document.body.append(probe);
+    const charW = probe.getBoundingClientRect().width;
+    probe.remove();
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+    const lines = tr.height / lh;
+    add('右の欄の空の文は横に並ぶ（文字の並びの幅が文字 1 つ分の 3 倍より広い）', tr.width > charW * 3 && charW > 0,
+      Math.round(tr.width) + 'px の文字の並び vs 文字 1 つ ' + Math.round(charW) + 'px（li は ' + Math.round(r.width) + 'px）: ' + el.textContent);
+    add('右の欄の空の文は 2 行まで（1 文字ずつ縦ではない）', lines > 0 && lines <= 2.5, 'lines ' + lines.toFixed(1) + ' (' + Math.round(tr.height) + 'px)');
+    add('右の欄の空の文は表の行ではない（display が grid ではない）', cs.display !== 'grid', cs.display);
+    add('右の欄の空の文は、欄の中に見えている', r.width > 0 && r.height > 0 && tr.width > 0 && el.offsetParent !== null, Math.round(r.width) + 'x' + Math.round(r.height));
+  }, '右の欄の空の文（.cempty）');
   /* the three-language tables are all there */
   for (const l of ['ja', 'zh', 'en']) add('the ' + l + ' words are loaded', !!(H.T[l] && Object.keys(H.T[l]).length > 50));
   add('the state lamp still has three colours', !!$('.dot'));
@@ -1002,6 +1029,72 @@ window.__spChecks = async function(group, mode){
       add('the size is still there after the settings sheet is rebuilt', !!again && again.textContent === 'Logs: 2.0 GB',
         again && again.textContent);
       H.closeAll();
+    }
+    /* ================= 2026-10-03: 開発の置き場所を選んだ答えが画面に出る ================= */
+    /* 持ち主 11:48「クライアントでフォルダ選んべない」: 選んでも画面に何も出なかった（ok の答えを report() が捨てていた）。開き直さない答え
+       （同じフォルダ: data.message）はアプリの言葉が知らせに出る。開き直す答え（data.restart + data.text）は moveCopy と同じで、アプリが
+       自分の箱で知らせるのでページは黙る（崩す係 8: 同じ文が 2 回出ていた）。開発の欄は、アプリが "shell" で devFolder を渡した時だけ
+       描かれる（ui/host-v01.js）ので、ここで渡す。ページは場所を渡さない（命令の名前だけ）。やめた時（cancelled）は黙る。断り（error）は
+       アプリの言葉で出る。フォルダ選択の窓は長く迷えるので、15 秒の待ちではなく長い待ち（LONG_CMDS）: 崩す係 1 は、15 秒を過ぎてから
+       選ぶと「応答がありません」だけが出て、アプリの答えが捨てられるのを見つけた。 */
+    {
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      window.__emit({ type:'event', name:'shell', data:{ version:'1.1', devFolder:'%USERPROFILE%\\Desktop\\HostRoles', devOn:false, mode:'friend' } });
+      await tick();
+      H.closeAll(); SR.setPage('pocketroles'); await tick();
+      const pickBtn = $('#set-dev [data-cmd="pickModSource"]');
+      add('設定 → PocketRoles → 開発 に「別のフォルダを選ぶ…」がある（アプリが置き場所を渡した時）', !!pickBtn && pickBtn.textContent.trim().length > 0, pickBtn ? pickBtn.textContent : 'no #set-dev button');
+      add('... その上に「置き場所:」とフォルダが出ている', !!$('#set-dev-path') && $('#set-dev-path').textContent.includes('HostRoles'), $('#set-dev-path') && $('#set-dev-path').textContent);
+      add('pickModSource は長く待つ命令（LONG_CMDS。フォルダ選択の窓を開く pickSteam・moveCopy と同じ）',
+        SR.longCmds && SR.longCmds.has('pickModSource') && SR.longCmds.has('pickSteam') && SR.longCmds.has('moveCopy'), SR.longCmds ? [...SR.longCmds].join(',') : 'no longCmds');
+      if (pickBtn) {
+        $('#toast').textContent = '';
+        window.__reply.pickModSource = { answer:{ ok:true, data:{ path:'%USERPROFILE%\\work\\HostRoles', restart:false, message:'MSG-SAME' } } };
+        const n0 = window.__sent.length;
+        pickBtn.click();
+        await wait(150);
+        const sent = window.__sent.slice(n0).filter(m => m.cmd === 'pickModSource');
+        add('押すと pickModSource を 1 回だけ送る（場所は送らない）', sent.length === 1 && JSON.stringify(sent[0].args || {}) === '{}', JSON.stringify(window.__sent.slice(n0)));
+        add('開き直さない答え（同じフォルダ）は、アプリの言葉がそのまま知らせに出る', $('#toast').textContent === 'MSG-SAME', $('#toast').textContent);
+        $('#toast').textContent = '';
+        window.__reply.pickModSource = { answer:{ ok:true, data:{ path:'%USERPROFILE%\\work\\HostRoles', restart:true, text:'MSG-PICKED' } } };
+        pickBtn.click(); await wait(150);
+        add('開き直す答えは、ページは黙る（アプリが自分の箱で知らせる。同じ文を 2 回出さない）', $('#toast').textContent === '', $('#toast').textContent);
+        window.__reply.pickModSource = { answer:{ ok:true, data:{ cancelled:true } } };
+        pickBtn.click(); await wait(150);
+        add('選ぶのをやめた時は何も言わない（「失敗しました」と言わない）', $('#toast').textContent === '', $('#toast').textContent);
+        window.__reply.pickModSource = { answer:{ ok:false, error:'BAD-FOLDER' } };
+        pickBtn.click(); await wait(150);
+        add('ソースでないフォルダを選んだ時は、アプリの断りの言葉が出る', $('#toast').textContent === 'BAD-FOLDER', $('#toast').textContent);
+        $('#toast').textContent = '';
+        window.__reply.pickModSource = { answer:{ ok:false, busy:true } };
+        pickBtn.click(); await wait(150);
+        add('作業中は「ほかの処理の途中です」の知らせ（toast.busy の文そのもの）', $('#toast').textContent === H.t('toast.busy') && $('#toast').textContent.length > 0, $('#toast').textContent);
+        /* 15 秒の待ち（INVOKE_MS.short）を 60 ms に縮め、答えを 300 ms 遅らせる: 長い待ちの命令なら答えが出る。短い待ちだと
+           「応答がありません」が出て、遅れて来た答えは捨てられる（崩す係 1 が本物の 15 秒で見た事と同じ形） */
+        const wasShort = SR.invokeMs.short;
+        SR.invokeMs.short = 60;
+        $('#toast').textContent = '';
+        window.__reply.pickModSource = { delayMs:300, answer:{ ok:true, data:{ path:'%USERPROFILE%\\work\\HostRoles', restart:false, message:'MSG-LATE' } } };
+        pickBtn.click(); await wait(600);
+        add('短い待ちを過ぎてから選んでも、アプリの答えが出る（15 秒で「応答がありません」と言わない）', $('#toast').textContent === 'MSG-LATE', $('#toast').textContent);
+        SR.invokeMs.short = wasShort;
+        /* 本当に答えが無い時（長い待ちも切れた）: 「応答がありません（開発の置き場所）」とボタンの名前付き（EXTRA_LABEL） */
+        const wasLong = SR.invokeMs.long;
+        SR.invokeMs.long = 60;
+        $('#toast').textContent = '';
+        window.__reply.pickModSource = 'never';
+        pickBtn.click(); await wait(300);
+        const label = H.cmdLabel('pickModSource');
+        add('答えが無いままなら「応答がありません」にボタンの名前が付く（EXTRA_LABEL）',
+          $('#toast').textContent === H.t('toast.timeout', { x:label }) && label !== 'pickModSource' && $('#toast').textContent.includes(label),
+          $('#toast').textContent + ' / ' + label);
+        SR.invokeMs.long = wasLong;
+        delete window.__reply.pickModSource;
+      }
+      H.closeAll();
+      window.__emit({ type:'event', name:'shell', data:{ version:'1.1', devFolder:null, mode:'friend' } });
+      await tick();
     }
     /* ================= v1.3: プロフィールの絵（自分の画像） ================= */
     /* アプリが "shell" で渡す写し（本物は 256×256 の PNG。ここは 1×1 で足りる。tools/ なので data: の綴りを書いてよい）。ページは

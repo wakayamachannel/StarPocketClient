@@ -295,6 +295,40 @@ namespace Starpocket.Client.SelfTest
                     && ClientApp.DevSwitchRefusal(false, true, true) == "game_running");
                 foreach (var l in Lang.Codes)
                     r.Check("the switch's words are in " + l, S.T(l, "dev_nofolder") != "dev_nofolder" && S.T(l, "dev_switch_on") != "dev_switch_on" && S.T(l, "dev_switch_off") != "dev_switch_off");
+
+                // 2026-10-03（持ち主 11:48「クライアントでフォルダ選んべない」）: 置き場所を選んだら、その場で開き直す（ClientApp.DoPickModSource）。
+                // 今の置き場所と同じフォルダを選んだ時だけ開き直さないので、「同じ」の判定と、3 言語の言葉をここで見る
+                r.Check("置き場所: 同じフォルダ（大文字小文字・区切りの向き・末尾の \\ は見ない）",
+                    DevSource.SameFolder(hr, hr.ToUpperInvariant() + "\\") && DevSource.SameFolder(hr, hr.Replace('\\', '/')) && DevSource.SameFolder(" " + hr + " ", hr));
+                r.Check("置き場所: 違うフォルダ・空・null は「同じ」ではない",
+                    !DevSource.SameFolder(hr, moved) && !DevSource.SameFolder(hr, null) && !DevSource.SameFolder(null, hr)
+                    && !DevSource.SameFolder("", "") && !DevSource.SameFolder(null, null) && !DevSource.SameFolder(hr, Path.Combine(hr, "sub")));
+                foreach (var l in Lang.Codes)
+                {
+                    string okText = S.T(l, "dev_pick_ok", @"X:\Y");
+                    r.Check("置き場所を選んだ時の言葉 (" + l + "): フォルダと StarPocket Client を名指しし、「次に開いた時から」とは言わず、開き直すと言う",
+                        okText.Contains(@"X:\Y") && okText.Contains("StarPocket Client")
+                        && !okText.Contains("次に") && !okText.Contains("下次") && !okText.Contains("next time")
+                        && (okText.Contains("開き直") || okText.Contains("重新打开") || okText.Contains("reopen")), okText);
+                    string sameText = S.T(l, "dev_pick_same", @"X:\Y");
+                    r.Check("同じフォルダを選んだ時の言葉がある (" + l + ")", sameText != "dev_pick_same" && sameText.Contains(@"X:\Y"), sameText);
+                }
+                // 2026-10-03（崩す係 5）: 選んだ後に「断る・書くだけ・開き直す」のどれかを決める表（ClientApp.PickModSourceOutcome）。前は「同じか」の判定と
+                // 言葉しか点検が無く、開き直す行とゲーム中に断る行を消しても自己点検が通っていた
+                r.Check("置き場所を選んだ後: 選んでいる間にゲームが始まっていたら、何を選んでも断る（game_running）",
+                    ClientApp.PickModSourceOutcome(true, true, false) == "game_running" && ClientApp.PickModSourceOutcome(true, true, true) == "game_running"
+                    && ClientApp.PickModSourceOutcome(true, false, false) == "game_running" && ClientApp.PickModSourceOutcome(true, false, true) == "game_running");
+                r.Check("置き場所を選んだ後: ソースのフォルダでなければ断る（dev_pick_bad）",
+                    ClientApp.PickModSourceOutcome(false, false, false) == "dev_pick_bad" && ClientApp.PickModSourceOutcome(false, false, true) == "dev_pick_bad");
+                r.Check("置き場所を選んだ後: 今と同じフォルダは書くだけ（dev_pick_same）、違うフォルダは書いて開き直す（dev_pick_ok）",
+                    ClientApp.PickModSourceOutcome(false, true, true) == "dev_pick_same" && ClientApp.PickModSourceOutcome(false, true, false) == "dev_pick_ok");
+                r.Check("置き場所を選んだ後: 設定に書くのは dev_pick_ok と dev_pick_same だけ、開き直すのは dev_pick_ok だけ",
+                    ClientApp.PickModSourceSaves("dev_pick_ok") && ClientApp.PickModSourceSaves("dev_pick_same")
+                    && !ClientApp.PickModSourceSaves("game_running") && !ClientApp.PickModSourceSaves("dev_pick_bad")
+                    && ClientApp.PickModSourceReopens("dev_pick_ok") && !ClientApp.PickModSourceReopens("dev_pick_same")
+                    && !ClientApp.PickModSourceReopens("game_running") && !ClientApp.PickModSourceReopens("dev_pick_bad"));
+                foreach (var l in Lang.Codes)
+                    r.Check("置き場所を選んだ後の断りの言葉がある (" + l + ")", S.T(l, "game_running") != "game_running" && S.T(l, "dev_pick_bad") != "dev_pick_bad");
             });
         }
 
@@ -1550,6 +1584,19 @@ namespace Starpocket.Client.SelfTest
                 r.Check("the tray's \"scan again\" runs the page's own scan (nav run aegis.rescan)", g.Contains("d.run === 'aegis.rescan'"));
                 r.Check("the blocked button says it also starts the game", g.Contains("'ps.b.blocked': '確かめて起動'") && g.Contains("'ps.b.blocked': '重新检查并启动'") && g.Contains("'ps.b.blocked': 'Check and play'"));
                 r.Check("settings v0.1 does not store go back to their defaults (PREF_DEFAULTS from the page)", html.Contains("AEGIS_LOG, PREF_DEFAULTS, prefs,") && g.Contains("APP_SIDE"));
+                // 2026-10-03（持ち主「クライアントでフォルダ選んべない」）: 開発の置き場所を選んだ答え（data.message）をページが知らせに出す。
+                // 前は ok の答えを report() が黙って通していたので、押しても何も起きないボタンに見えた。ui\index.html は design から
+                // tools\import-ui.ps1 で作るので、ここが落ちる時は作り直しを忘れている
+                r.Check("the page shows the app's words after pickModSource (FLOW in index.html)",
+                    html.Contains("'pickModSource': async () =>") && html.Contains("r.data.message"));
+                r.Check("pickModSource has a label for the busy / failed notices (EXTRA_LABEL)", html.Contains("pickModSource:{ja:"));
+                // 2026-10-03（崩す係 1）: フォルダ選択の窓は 15 秒では足りない（net48 の古い木の形）。pickSteam・moveCopy と同じく長く待つ命令に入れる。
+                // 入っていないと、15 秒を過ぎてから選んだ時に「応答がありません」だけが出て、断りの言葉も「同じフォルダ」の言葉も捨てられる
+                int li = html.IndexOf("const LONG_CMDS = new Set([", StringComparison.Ordinal);
+                int le = li < 0 ? -1 : html.IndexOf("]);", li, StringComparison.Ordinal);
+                string longCmds = li >= 0 && le > li ? html.Substring(li, le - li) : "";
+                r.Check("pickModSource waits as long as the other folder dialogs (LONG_CMDS in index.html)",
+                    longCmds.Contains("'pickModSource'") && longCmds.Contains("'pickSteam'") && longCmds.Contains("'moveCopy'"), longCmds);
             });
             // v0.1.1: 起動するゲーム in Settings → PocketRoles; PLAY follows it (the page decides which command PLAY sends)
             // 2026-09-26: host-v01.js の中で、コメントを閉じる */ の **うしろ** に日本語の説明文を書いてしまい、

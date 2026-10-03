@@ -947,7 +947,9 @@ namespace Starpocket.Client.SelfTest
                 "dev_up_3", "dev_up_4", "dev_interop_failed", "dev_interop_ok", "dev_up_done",
                 "lg_zipped", "lg_size", "lg_tip", "lg_big", "lg_log_title", "lg_log_sub", "lg_log_none", "lg_log_more",
                 // v1.1: the developer switch and which DLL is in the copy
-                "dev_nofolder", "dev_switch_on", "dev_switch_off", "origin_dev", "origin_release", "origin_unknown" };
+                "dev_nofolder", "dev_switch_on", "dev_switch_off", "origin_dev", "origin_release", "origin_unknown",
+                // v1.4 / 2026-10-03: the source folder picked in Settings (and the "same folder, nothing to reopen for" answer)
+                "dev_pick", "dev_pick_bad", "dev_pick_ok", "dev_pick_same" };
             foreach (var l in Lang.Codes)
             {
                 var missing = keys.Where(k => S.T(l, k) == k).ToArray();

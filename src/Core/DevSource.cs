@@ -54,6 +54,16 @@ namespace Starpocket.Client.Core
             && GameFolders.PathExists(GameFolders.Join(dir, ProjectFile))
             && GameFolders.PathExists(GameFolders.Join(dir, LegacyLauncher.ScriptName));
 
+        /// <summary>2026-10-03: 選んだフォルダが、今「置き場所:」に出ている物（ClientContext.DevFolder）と同じか。区切りの向き・末尾の
+        /// \・大文字小文字は見ない。同じなら設定に書くだけで、開き直す理由が無い（ClientApp.DoPickModSource）。どちらかが空なら「違う」。</summary>
+        public static bool SameFolder(string a, string b)
+        {
+            string x = Norm(a), y = Norm(b);
+            return x.Length > 0 && y.Length > 0 && string.Equals(x, y, StringComparison.OrdinalIgnoreCase);
+        }
+
+        static string Norm(string p) => (p ?? "").Trim().Replace('/', '\\').TrimEnd('\\');
+
         /// <summary>
         /// The folders looked at, in order: the folder the author PICKED in Settings (v1.4), then each Desktop
         /// shortcut's target folder, then &lt;Desktop&gt;\HostRoles. A shortcut that cannot be read is skipped, never

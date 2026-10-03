@@ -248,7 +248,7 @@ function showVer(){
 /* v1.1: the author's switch (Settings → PocketRoles → 開発). What the app said: whether the working copy of the mod was
    found on this PC (only then is the block drawn - index.html devBlock asks spHostDev), its folder (the account name
    already taken out by the app), the setting as saved, and what is in the game copy right now (from "status"). */
-let devInfo = { available:false, on:false, folder:'', origin:'' };
+let devInfo = { available:false, on:false, folder:'', origin:'', missing:false };
 window.spHostDev = () => devInfo;
 /* the 「開発」 chip and the developer rows follow what this run really IS (the app's "mode"), not the setting */
 function applyMode(mode){
@@ -467,7 +467,10 @@ on('shell', d => {
      really is - the chip and the developer rows follow that. */
   applyMode(d.mode);
   if (Object.hasOwn(d, 'devFolder')) {
-    devInfo.available = !!d.devFolder;
+    /* 2026-10-03（崩す係 4）: devMissing = 置き場所が見つからないが settings.json に devBuild か devSource がある（フォルダを移した・消した）。
+       この時も欄は描く（「置き場所: 見つかりません」と「別のフォルダを選ぶ…」。前は欄ごと消えて、アプリの中から直せなかった） */
+    devInfo.missing = !d.devFolder && d.devMissing === true;
+    devInfo.available = !!d.devFolder || devInfo.missing;
     devInfo.folder = d.devFolder ? String(d.devFolder) : '';
     if (typeof d.devOn === 'boolean') { devInfo.on = d.devOn; if (H.prefs.devBuild !== d.devOn) { H.prefs.devBuild = d.devOn; H.savePrefs(); } }
     H.refreshSettings();

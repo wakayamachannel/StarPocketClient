@@ -400,7 +400,11 @@ namespace Starpocket.Client.Shell
                 // found on this PC - and null on every other PC, where the page then draws no switch at all. The
                 // account name is taken out of the path (the owner streams with this window open). devOn is the
                 // setting as saved; "mode" above is what this run really is (src\Core\DevSource.cs).
+                // 2026-10-03（崩す係 4）: devMissing = 見つからないが settings.json に devBuild か devSource がある（フォルダを移した・消した）。
+                // この時もページは欄を描く（「置き場所: 見つかりません」と「別のフォルダを選ぶ…」。前は欄ごと消えて、アプリの中から直せなかった）。
+                // 決め方は ClientContext.DevBlockShape の表。普通の PC（設定に何も無い）は今までどおり devFolder null・devMissing false で欄なし。
                 ["devFolder"] = ctx.DevSwitchShown ? Mask.Home(ctx.DevFolder, Environment.GetEnvironmentVariable("USERPROFILE")) : null,
+                ["devMissing"] = ctx.DevFolderMissing,
                 ["devOn"] = ctx.Settings.DevBuild,
                 ["avatar"] = png == null ? null : ProfileImage.DataUrl(png),   // v1.3: 自分の画像（data: の PNG、256×256）か null
                 // 最初の同意の画面（first-run.md ①）。null なら出しません。null でない時、ページは重ね画面を出して
@@ -1907,7 +1911,9 @@ namespace Starpocket.Client.Shell
         }
 
         /// <summary>Why the switch cannot be flipped right now, as a string key, or null when it can. Turning it ON needs
-        /// the working copy; turning it OFF never does (a folder that went away must not lock the app in developer mode).</summary>
+        /// the working copy; turning it OFF never does (a folder that went away must not lock the app in developer mode).
+        /// 2026-10-03（崩す係 4）: 置き場所が消えた人にも欄が出るようになった（ClientContext.DevBlockShape の "missing"）ので、この dev_nofolder は
+        /// 画面から本当に届く断りになった。言葉は「別のフォルダを選ぶ…」で直せる事を言う（Strings.cs）。</summary>
         internal static string DevSwitchRefusal(bool on, bool folderFound, bool gameRunning)
         {
             if (on && !folderFound) return "dev_nofolder";

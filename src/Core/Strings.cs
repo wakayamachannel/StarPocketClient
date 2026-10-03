@@ -303,7 +303,8 @@ namespace Starpocket.Client.Core
                 ["sdk_missing"] = ".NET SDK が見つかりません: {0}",
                 ["dev_only"] = "この機能は開発モードでだけ使えます（設定 → PocketRoles → 開発 で切り替えた時、または PocketRoles.csproj のあるフォルダーから起動した時）。",
                 // ---- v1.1: 開発用への切り替え（設定 → PocketRoles → 開発）と、いま入っている DLL がどちらか（src\Core\DevSource.cs・ModOrigin.cs）
-                ["dev_nofolder"] = "開発用の置き場所が見つかりません（デスクトップの PocketRoles.lnk の先、または デスクトップ\\HostRoles に PocketRoles.csproj と PocketRolesLauncher.ps1 の両方があること）。",
+                // 2026-10-03（崩す係 4）: 置き場所が消えた人は、設定の欄の「別のフォルダを選ぶ…」で直せる（前は欄ごと消えていた）ので、その道を言う
+                ["dev_nofolder"] = "開発用の置き場所が見つからないので、開発用にはできません。設定 → PocketRoles → 開発 の「別のフォルダを選ぶ…」で、PocketRoles.csproj と PocketRolesLauncher.ps1 の両方があるフォルダを選んでください（選んだフォルダ → デスクトップの PocketRoles.lnk の先 → デスクトップ\\HostRoles の順に探します）。",
                 ["dev_switch_on"] = "開発用に切り替えます。StarPocket Client を開き直します。",
                 ["dev_switch_off"] = "配布用（友達モード）に戻します。StarPocket Client を開き直します。",
                 ["origin_dev"] = "開発ビルド（{0} に再ビルド）",
@@ -628,7 +629,7 @@ namespace Starpocket.Client.Core
                 ["sdk_missing"] = "未找到 .NET SDK: {0}",
                 ["dev_only"] = "这个功能只能在开发模式下使用（在 设置 → PocketRoles → 开发 中切换后，或从含有 PocketRoles.csproj 的文件夹启动时）。",
                 // ---- v1.1: 切换到开发版（设置 → PocketRoles → 开发），以及现在装的是哪个 DLL
-                ["dev_nofolder"] = "找不到开发用的存放位置（桌面上 PocketRoles.lnk 指向的文件夹，或 桌面\\HostRoles，需要同时有 PocketRoles.csproj 和 PocketRolesLauncher.ps1）。",
+                ["dev_nofolder"] = "找不到开发用的存放位置，所以无法切换到开发版。请在 设置 → PocketRoles → 开发 中用「选择其他文件夹…」选择同时含有 PocketRoles.csproj 和 PocketRolesLauncher.ps1 的文件夹（查找顺序：选过的文件夹 → 桌面上 PocketRoles.lnk 指向的文件夹 → 桌面\\HostRoles）。",
                 ["dev_switch_on"] = "切换到开发版。StarPocket Client 将重新打开。",
                 ["dev_switch_off"] = "切回发布版（朋友模式）。StarPocket Client 将重新打开。",
                 ["origin_dev"] = "开发版编译（{0} 重新编译）",
@@ -948,7 +949,7 @@ namespace Starpocket.Client.Core
                 ["sdk_missing"] = ".NET SDK not found: {0}",
                 ["dev_only"] = "This is only available in developer mode (switched on in Settings → PocketRoles → Developer, or when the app is started from the folder that has PocketRoles.csproj).",
                 // ---- v1.1: the developer switch (Settings → PocketRoles → Developer) and which DLL is in the copy
-                ["dev_nofolder"] = "The developer folder was not found (the folder the Desktop's PocketRoles.lnk points to, or Desktop\\HostRoles, holding both PocketRoles.csproj and PocketRolesLauncher.ps1).",
+                ["dev_nofolder"] = "The developer folder was not found, so the developer build cannot be switched on. In Settings → PocketRoles → Developer, use \"Choose another folder…\" to pick the folder that has both PocketRoles.csproj and PocketRolesLauncher.ps1 (looked for in this order: the folder you picked, the folder the Desktop's PocketRoles.lnk points to, Desktop\\HostRoles).",
                 ["dev_switch_on"] = "Switching to the developer build. StarPocket Client will reopen.",
                 ["dev_switch_off"] = "Back to the released build (friend mode). StarPocket Client will reopen.",
                 ["origin_dev"] = "developer build (rebuilt {0})",

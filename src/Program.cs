@@ -107,6 +107,12 @@ namespace Starpocket.Client
                 log.RotateAtStart();
                 log.Write(AppInfo.Name + " " + AppInfo.Version + " start (" + (ctx.DevMode ? "developer" + (ctx.DevFromSetting ? " (the switch in Settings)" : "") + ": " + ctx.Src : "friend") + ")");
                 if (ctx.DevFolder != null && !ctx.DevMode) log.Write("developer folder found, not in use: " + ctx.DevFolder);
+                // 2026-10-03（崩す係 4）: 置き場所が消えたのに設定が残っている時は、黙って友達モードにならず、記録に 1 行（設定の欄にも出る）
+                if (ctx.DevFolderMissing)
+                    log.Write("developer folder not found; settings.json still has " + (ctx.Settings.DevBuild ? "devBuild: true" : "")
+                        + (ctx.Settings.DevBuild && !string.IsNullOrEmpty(ctx.Settings.DevSourcePath) ? ", " : "")
+                        + (!string.IsNullOrEmpty(ctx.Settings.DevSourcePath) ? "devSource: " + ctx.Settings.DevSourcePath : "")
+                        + " - friend mode until a folder is picked in Settings (PocketRoles → 開発)");
                 log.Write("game copy: " + ctx.Paths.Modded);
                 log.Write("Steam: " + (ctx.SteamDir ?? "not found"));
                 log.Write("WebView2 runtime " + wv2);

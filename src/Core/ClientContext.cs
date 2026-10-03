@@ -115,8 +115,40 @@ namespace Starpocket.Client.Core
         }
 
         /// <summary>v1.1: the page draws the developer switch only where there is something to switch: the working copy was
-        /// found, and this is not a developer build already running from the repository (nothing to turn off there).</summary>
-        public bool DevSwitchShown => DevFolder != null && !(DevMode && !DevFromSetting);
+        /// found, and this is not a developer build already running from the repository (nothing to turn off there).
+        /// 2026-10-03（崩す係 4）: 決め方は <see cref="DevBlockShape"/> の表に出した（この値は「見つかった」の形）。</summary>
+        public bool DevSwitchShown => DevBlock == DevBlockFound;
+
+        /// <summary>2026-10-03（崩す係 4）: 置き場所が見つからないのに、settings.json に devBuild か devSource が書いてある（置き場所のフォルダを
+        /// 移した・消した、かつデスクトップの HostRoles もショートカットも無い）。前はこの時 <see cref="DevSwitchShown"/> が false になって
+        /// 設定の欄ごと消え、「別のフォルダを選ぶ…」のボタンも消えていた＝アプリの中から直せなかった（開発のスイッチが ON でも、説明なしに
+        /// 友達モードで起動していた）。今はページに devMissing を渡し、「置き場所: 見つかりません」と選ぶボタンを描く（ClientApp.OnUiReady の
+        /// "shell"、ui\host-v01.js、design の devBlock()）。スイッチを ON にする操作は ClientApp.DevSwitchRefusal が dev_nofolder で断る。</summary>
+        public bool DevFolderMissing => DevBlock == DevBlockMissing;
+
+        internal const string DevBlockFound = "found";
+        internal const string DevBlockMissing = "missing";
+
+        string DevBlock => DevBlockShape(DevFolder != null, Settings != null && Settings.DevBuild,
+            Settings != null && !string.IsNullOrEmpty(Settings.DevSourcePath), DevMode, DevFromSetting);
+
+        /// <summary>開発の欄をどう描くか、の表（ClientApp.DevSwitchRefusal と同じ形。自己点検が組み合わせを回す）。
+        /// null: 描かない（普通の PC。または exe の隣に PocketRoles.csproj がある開発ビルドで、切り替える物が無い）。
+        /// "found": 置き場所が見つかった（今までどおり: スイッチ・「置き場所:」・「別のフォルダを選ぶ…」）。
+        /// "missing": 見つからないが settings.json に devBuild か devSource がある（「置き場所: 見つかりません」と選ぶボタン。スイッチが ON なら
+        /// 友達モードで動いている事の 1 行）。設定に何も無い普通の PC は今までどおり描かない。</summary>
+        /// <param name="folderFound">DevSource.Find が見つけた（DevFolder != null）。</param>
+        /// <param name="settingOn">settings.json の devBuild が true。</param>
+        /// <param name="pickedInSettings">settings.json に devSource（選んだフォルダ）が書いてある。</param>
+        /// <param name="devMode">この起動が開発モード。</param>
+        /// <param name="devFromSetting">開発モードがスイッチから来た（exe の隣の csproj からではない）。</param>
+        internal static string DevBlockShape(bool folderFound, bool settingOn, bool pickedInSettings, bool devMode, bool devFromSetting)
+        {
+            if (devMode && !devFromSetting) return null;
+            if (folderFound) return DevBlockFound;
+            if (settingOn || pickedInSettings) return DevBlockMissing;
+            return null;
+        }
 
         /// <summary>PORT-MAP 13.1: the launcher's own file when the app sits in the launcher's folder (or in a developer
         /// build running from the repository, where the launcher writes lastBuiltGameVersion); otherwise the app's own

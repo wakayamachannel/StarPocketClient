@@ -296,6 +296,65 @@ namespace Starpocket.Client.SelfTest
                 foreach (var l in Lang.Codes)
                     r.Check("the switch's words are in " + l, S.T(l, "dev_nofolder") != "dev_nofolder" && S.T(l, "dev_switch_on") != "dev_switch_on" && S.T(l, "dev_switch_off") != "dev_switch_off");
 
+                // 2026-10-03（崩す係 4）: 開発の欄をどう描くか（ClientContext.DevBlockShape）。置き場所が消えても（フォルダを移した・消した、デスクトップの
+                // HostRoles もショートカットも無い）、settings.json に devBuild か devSource がある人には欄を描く（「置き場所: 見つかりません」と
+                // 「別のフォルダを選ぶ…」）。前は DevFolder が null だと DevSwitchShown が false になって欄ごと消え、アプリの中から直せなかった
+                Func<bool, bool, bool, bool, bool, string> shape = ClientContext.DevBlockShape;
+                r.Check("開発の欄: 置き場所が見つかれば「見つかった」の形（設定の有無は関係ない）",
+                    shape(true, false, false, false, false) == "found" && shape(true, true, false, false, false) == "found"
+                    && shape(true, false, true, false, false) == "found" && shape(true, true, true, false, false) == "found"
+                    && shape(true, true, true, true, true) == "found" && shape(true, true, false, true, true) == "found");
+                r.Check("開発の欄: 見つからなくても、settings.json に devBuild か devSource があれば「見つかりません」の形で描く",
+                    shape(false, true, false, false, false) == "missing" && shape(false, false, true, false, false) == "missing"
+                    && shape(false, true, true, false, false) == "missing");
+                r.Check("開発の欄: 見つからず、設定にも何も無い普通の PC では描かない（今までどおり）",
+                    shape(false, false, false, false, false) == null);
+                r.Check("開発の欄: exe の隣に PocketRoles.csproj がある開発ビルドでは、見つかっても設定が残っていても描かない（切り替える物が無い）",
+                    shape(true, false, false, true, false) == null && shape(true, true, true, true, false) == null
+                    && shape(false, true, true, true, false) == null && shape(false, true, false, true, false) == null && shape(false, false, true, true, false) == null);
+                {
+                    // 32 通り全部: 答えは null / found / missing のどれかで、「見つかりません」は見つからない時にだけ、「見つかった」は見つかった時にだけ
+                    bool all = true;
+                    for (int i = 0; i < 32; i++)
+                    {
+                        bool f = (i & 1) != 0, on = (i & 2) != 0, picked = (i & 4) != 0, dev = (i & 8) != 0, fromSetting = (i & 16) != 0;
+                        string s = shape(f, on, picked, dev, fromSetting);
+                        if (s != null && s != "found" && s != "missing") all = false;
+                        if (s == "missing" && f) all = false;
+                        if (s == "found" && !f) all = false;
+                        if (s == "missing" && !(on || picked)) all = false;
+                        if (s != null && dev && !fromSetting) all = false;
+                    }
+                    r.Check("開発の欄: 32 通りとも答えは 3 つのうちの 1 つで、「見つかりません」は見つからない時かつ設定がある時だけ", all);
+                }
+                // ClientContext の値もその表から（ページに渡す devFolder / devMissing は DevSwitchShown / DevFolderMissing）
+                {
+                    var set = new ClientSettings();
+                    set.SetDevSourcePath(moved);
+                    var cx = new ClientContext { DevFolder = null, Settings = set };
+                    r.Check("ClientContext: 置き場所が null でも devSource があれば DevFolderMissing（DevSwitchShown は false）", cx.DevFolderMissing && !cx.DevSwitchShown);
+                    cx.DevFolder = hr;
+                    r.Check("ClientContext: 見つかれば DevSwitchShown（DevFolderMissing は false）", cx.DevSwitchShown && !cx.DevFolderMissing);
+                    var onOnly = new ClientSettings();
+                    onOnly.SetDevBuild(true);
+                    var cx2 = new ClientContext { DevFolder = null, Settings = onOnly };
+                    r.Check("ClientContext: devBuild が ON で置き場所が無い（友達モードで動く）時も DevFolderMissing", cx2.DevFolderMissing && !cx2.DevSwitchShown && !cx2.DevMode);
+                    var cx3 = new ClientContext { DevFolder = null, Settings = new ClientSettings() };
+                    r.Check("ClientContext: 普通の PC（設定に何も無い）はどちらも false", !cx3.DevSwitchShown && !cx3.DevFolderMissing);
+                    var cx4 = new ClientContext { DevFolder = hr, Settings = onOnly, DevMode = true, DevFromSetting = false };
+                    r.Check("ClientContext: exe の隣の csproj からの開発ビルドはどちらも false", !cx4.DevSwitchShown && !cx4.DevFolderMissing);
+                }
+                // 「見つかりません」の時、ON にする操作は断られ（dev_nofolder）、OFF にするのは通る（消えたフォルダに開発モードで閉じ込めない）。
+                // 断りの言葉は、直す道（「別のフォルダを選ぶ…」）と 2 つのファイルを名指しする
+                r.Check("「見つかりません」の時: ON は dev_nofolder で断る、OFF は通る", ClientApp.DevSwitchRefusal(true, false, false) == "dev_nofolder" && ClientApp.DevSwitchRefusal(false, false, false) == null);
+                foreach (var l in Lang.Codes)
+                {
+                    string s = S.T(l, "dev_nofolder");
+                    r.Check("ON にした時の断りの言葉 (" + l + ") は「別のフォルダを選ぶ…」と 2 つのファイルを名指しする",
+                        s.Contains("PocketRoles.csproj") && s.Contains("PocketRolesLauncher.ps1")
+                        && (s.Contains("別のフォルダを選ぶ…") || s.Contains("选择其他文件夹…") || s.Contains("Choose another folder…")), s);
+                }
+
                 // 2026-10-03（持ち主 11:48「クライアントでフォルダ選んべない」）: 置き場所を選んだら、その場で開き直す（ClientApp.DoPickModSource）。
                 // 今の置き場所と同じフォルダを選んだ時だけ開き直さないので、「同じ」の判定と、3 言語の言葉をここで見る
                 r.Check("置き場所: 同じフォルダ（大文字小文字・区切りの向き・末尾の \\ は見ない）",

@@ -701,6 +701,9 @@ html.av-photo .avatar-btn svg,html.av-photo .pop-av svg{width:100%;height:100%;c
 .row > .ctl{grid-column:2;grid-row:1 / span 2;align-self:center}
 .rec{font:800 9.5px/1 var(--font-ui);padding:4px 6px;border-radius:4px;background:var(--set-accent-soft);color:var(--set-accent-text);letter-spacing:.02em}
 .note{margin:10px 0 0;font-size:12px;line-height:1.55;color:var(--set-muted);max-width:500px}
+/* 2026-10-03: 開発の置き場所が見つからない時の「見つかりません」と、スイッチが ON のまま友達モードで動いている事の 1 行（注意の色） */
+.note.dev-missing,.dev-notfound{color:var(--warn)}
+.dev-notfound{font-weight:800}
 /* select */
 .sel{position:relative;display:block}
 .sel select{appearance:none;-webkit-appearance:none;width:100%;height:40px;border-radius:4px;border:1px solid var(--set-edge);background:var(--set-raised);padding:0 44px 0 14px;font-size:14px;font-weight:700;color:var(--set-text);cursor:pointer}
@@ -2124,7 +2127,7 @@ ja: {
   'set.shortcutCap':'ゲームを起動','set.shortcut':'デスクトップショートカットを追加','set.shortcutD':'デスクトップに PocketRoles のアイコンを作ります。押した時だけ作り、勝手には作りません。',
   'set.repairCap':'直す','set.repair':'MOD 用のコピーを直す','set.repairD':'Steam 版から MOD 用のコピーを作り直し、BepInEx の interop と cache を消します。次の起動は 1〜2 分かかります。Steam 版はそのまま。','set.repairBtn':'修復',
   'set.tools':'ツール・困ったとき','set.toolsD':'今のランチャーでできることは、全部ここから使えます。',
-  'set.devCap':'開発','set.dev':'開発用（自分でビルドした MOD）で動かす','set.devD':'MOD のソースから再ビルドして、その DLL で遊びます。オフに戻すと配布版のインストールに戻ります。切り替えると StarPocket Client を開き直します。','set.devPath':'置き場所:','set.devPick':'別のフォルダを選ぶ…','set.devNow':'いま入っている PocketRoles.dll:','toast.devOn':'開発用に切り替えます。開き直します…','toast.devOff':'配布用に戻します。開き直します…',
+  'set.devCap':'開発','set.dev':'開発用（自分でビルドした MOD）で動かす','set.devD':'MOD のソースから再ビルドして、その DLL で遊びます。オフに戻すと配布版のインストールに戻ります。切り替えると StarPocket Client を開き直します。','set.devPath':'置き場所:','set.devPick':'別のフォルダを選ぶ…','set.devNotFound':'見つかりません','set.devMissingOn':'開発のスイッチは ON ですが、置き場所が見つからないので、いまは配布版（友達モード）で動いています。「別のフォルダを選ぶ…」で置き場所を選ぶと、開き直して開発用に戻ります。','set.devNow':'いま入っている PocketRoles.dll:','toast.devOn':'開発用に切り替えます。開き直します…','toast.devOff':'配布用に戻します。開き直します…',
   'tg.launch':'起動','tg.update':'更新','tg.help':'困ったとき','tg.folders':'フォルダ','tg.aegis':'Aegis','tg.dev':'開発','tg.cli':'コマンドライン',
   'tag.friend':'友達','tag.dev':'開発','tag.new':'新','set.autoOf':'{x}（自動で行います）',
   'legal.terms':'利用規約','legal.third':'サードパーティー','legal.privacy':'プライバシーポリシー','legal.termsSoon':'利用規約（準備中）','legal.privacySoon':'プライバシーポリシー（準備中）',
@@ -2277,7 +2280,7 @@ zh: {
   'set.shortcutCap':'启动游戏','set.shortcut':'添加桌面快捷方式','set.shortcutD':'在桌面上创建 PocketRoles 的图标。只在按下时创建，不会自己创建。',
   'set.repairCap':'修复','set.repair':'修复模组用副本','set.repairD':'从 Steam 版重新制作模组用副本，并删除 BepInEx 的 interop 和 cache。下次启动需要 1〜2 分钟。Steam 版保持不变。','set.repairBtn':'修复',
   'set.tools':'工具与帮助','set.toolsD':'现在的启动器能做的事，都可以在这里使用。',
-  'set.devCap':'开发','set.dev':'使用开发版（自己编译的模组）','set.devD':'从模组的源码重新编译，用那个 DLL 游戏。关闭后回到发布版的安装。切换时 StarPocket Client 会重新打开。','set.devPath':'存放位置：','set.devPick':'选择其他文件夹…','set.devNow':'现在装的 PocketRoles.dll：','toast.devOn':'切换到开发版。正在重新打开…','toast.devOff':'切回发布版。正在重新打开…',
+  'set.devCap':'开发','set.dev':'使用开发版（自己编译的模组）','set.devD':'从模组的源码重新编译，用那个 DLL 游戏。关闭后回到发布版的安装。切换时 StarPocket Client 会重新打开。','set.devPath':'存放位置：','set.devPick':'选择其他文件夹…','set.devNotFound':'找不到','set.devMissingOn':'开发开关已打开，但找不到存放位置，所以现在以发布版（朋友模式）运行。用「选择其他文件夹…」选好存放位置后，会重新打开并回到开发版。','set.devNow':'现在装的 PocketRoles.dll：','toast.devOn':'切换到开发版。正在重新打开…','toast.devOff':'切回发布版。正在重新打开…',
   'tg.launch':'启动','tg.update':'更新','tg.help':'遇到问题','tg.folders':'文件夹','tg.aegis':'Aegis','tg.dev':'开发','tg.cli':'命令行',
   'tag.friend':'朋友','tag.dev':'开发','tag.new':'新','set.autoOf':'{x}（自动进行）',
   'legal.terms':'使用条款','legal.third':'第三方声明','legal.privacy':'隐私政策','legal.termsSoon':'使用条款（准备中）','legal.privacySoon':'隐私政策（准备中）',
@@ -2429,7 +2432,7 @@ en: {
   'set.shortcutCap':'Launching','set.shortcut':'Add a desktop shortcut','set.shortcutD':'Puts a PocketRoles icon on your desktop. It is made only when you press this, never on its own.',
   'set.repairCap':'Repair','set.repair':'Repair the mod copy','set.repairD':'Rebuilds the mod copy from the Steam version and clears BepInEx interop and cache. The next start takes 1–2 minutes. The Steam version is left as it is.','set.repairBtn':'Repair',
   'set.tools':'Tools & help','set.toolsD':'Everything today’s launcher can do is available from here.',
-  'set.devCap':'Developer','set.dev':'Use the developer build (the mod you build yourself)','set.devD':'Rebuilds the mod from its source and plays with that DLL. Off goes back to the released install. Switching reopens StarPocket Client.','set.devPath':'Folder:','set.devPick':'Choose another folder…','set.devNow':'PocketRoles.dll in the copy now:','toast.devOn':'Switching to the developer build. Reopening…','toast.devOff':'Back to the released build. Reopening…',
+  'set.devCap':'Developer','set.dev':'Use the developer build (the mod you build yourself)','set.devD':'Rebuilds the mod from its source and plays with that DLL. Off goes back to the released install. Switching reopens StarPocket Client.','set.devPath':'Folder:','set.devPick':'Choose another folder…','set.devNotFound':'Not found','set.devMissingOn':'The developer switch is on, but the folder was not found, so this run uses the released build (friend mode). Pick the folder with “Choose another folder…” and the app reopens as the developer build.','set.devNow':'PocketRoles.dll in the copy now:','toast.devOn':'Switching to the developer build. Reopening…','toast.devOff':'Back to the released build. Reopening…',
   'tg.launch':'Launch','tg.update':'Updates','tg.help':'Help','tg.folders':'Folders','tg.aegis':'Aegis','tg.dev':'Developer','tg.cli':'Command line',
   'tag.friend':'Friend','tag.dev':'Dev','tag.new':'New','set.autoOf':'{x} (done automatically)',
   'legal.terms':'Terms of use','legal.third':'Third-party notices','legal.privacy':'Privacy policy','legal.termsSoon':'Terms of use (coming soon)','legal.privacySoon':'Privacy policy (coming soon)',
@@ -4278,9 +4281,18 @@ const PAGES = {
 function devBlock(){
   const dev = window.spHostDev ? window.spHostDev() : { available:true, folder:'%USERPROFILE%\\Desktop\\HostRoles', origin:'', sample:true };
   if (!dev.available) return null;
+  /* 2026-10-03（崩す係 4）: 置き場所が消えた（フォルダを移した・消した、デスクトップの HostRoles もショートカットも無い）時、前は欄ごと消えて
+     「別のフォルダを選ぶ…」も押せなかった＝アプリの中から直せなかった（開発のスイッチが ON でも、説明なしに友達モードで起動していた）。
+     アプリは settings.json に devBuild か devSource がある人にだけ missing を渡し（ClientContext.DevBlockShape → "shell" の devMissing →
+     ui/host-v01.js）、ページは「置き場所: 見つかりません」と選ぶボタンを描く。スイッチが ON のままなら、いまは友達モードで動いている事を
+     1 行で言う。ON にする操作はアプリが断る（ClientApp.DevSwitchRefusal の dev_nofolder。言葉に直す道が書いてある）。 */
+  const missing = !!dev.missing;
   return h('div', { class:'set-block', id:'set-dev' }, cap(t('set.devCap'), 'set-dev-cap'),
     toggleRow('set-devBuild', t('set.dev'), t('set.devD'), !!prefs.devBuild, v => setPref('devBuild', v, v ? 'toast.devOn' : 'toast.devOff')),
-    h('p', { class:'note', id:'set-dev-path' }, t('set.devPath'), ' ', h('code', {}, dev.folder || ''), dev.sample ? t('set.pathSample') : ''),
+    missing && prefs.devBuild ? h('p', { class:'note dev-missing', id:'set-dev-missing', role:'status' }, t('set.devMissingOn')) : null,
+    h('p', { class:'note', id:'set-dev-path' }, t('set.devPath'), ' ',
+      missing ? h('b', { class:'dev-notfound', id:'set-dev-notfound' }, t('set.devNotFound')) : h('code', {}, dev.folder || ''),
+      dev.sample ? t('set.pathSample') : ''),
     /* v1.4: 作業コピーはデスクトップに無くてもよい（持ち主 2026-09-26「特定のフォルダからやらないといけないのめんどくさい」）。
        行き先を決めるのは、その場で開く Windows のフォルダ選択です。ページは場所を渡しません（cmd だけ送ります）。 */
     h('p', { class:'note' },

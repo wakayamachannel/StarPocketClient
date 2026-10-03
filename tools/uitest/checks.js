@@ -1092,9 +1092,84 @@ window.__spChecks = async function(group, mode){
         SR.invokeMs.long = wasLong;
         delete window.__reply.pickModSource;
       }
+      /* ================= 2026-10-03（崩す係 4）: 置き場所が消えた時も、欄と「別のフォルダを選ぶ…」が出る ================= */
+      /* 置き場所のフォルダを移した・消した（デスクトップの HostRoles もショートカットも無い）と、アプリは devFolder:null を渡す。前はそれで欄ごと
+         消え、「別のフォルダを選ぶ…」も押せなかった＝アプリの中から直せなかった（開発のスイッチが ON でも、説明なしに友達モードで起動）。
+         今は settings.json に devBuild か devSource がある人にだけ devMissing:true が付き（ClientContext.DevBlockShape）、ページは
+         「置き場所: 見つかりません」と選ぶボタンを描く。スイッチが ON なら、いまは友達モードで動いている事の 1 行。ON にする操作はアプリが
+         dev_nofolder で断る（ここではその答えを作って、言葉が出てスイッチが戻る事を見る）。 */
+      {
+        const lang = document.documentElement.lang || '';
+        const jaText = (H.T && H.T.ja && H.T.ja['set.devMissingOn']) || '';
+        window.__emit({ type:'event', name:'shell', data:{ version:'1.1', devFolder:null, devMissing:true, devOn:true, mode:'friend' } });
+        await tick();
+        H.closeAll(); SR.setPage('pocketroles'); await tick();
+        const missBtn = $('#set-dev [data-cmd="pickModSource"]');
+        add('置き場所が見つからなくても（devMissing）、開発の欄と「別のフォルダを選ぶ…」がある',
+          !!$('#set-dev') && !!missBtn && missBtn.textContent.trim() === H.t('set.devPick') && missBtn.offsetParent !== null,
+          ($('#set-dev') ? 'set-dev ok' : 'no #set-dev') + ' / ' + (missBtn ? missBtn.textContent : 'no button'));
+        const pathEl = $('#set-dev-path');
+        add('「置き場所: 見つかりません」と出る（フォルダの名前は出ない）',
+          !!pathEl && pathEl.textContent.includes(H.t('set.devPath')) && !!$('#set-dev-notfound') && $('#set-dev-notfound').textContent === H.t('set.devNotFound')
+          && H.t('set.devNotFound') !== 'set.devNotFound' && !pathEl.textContent.includes('HostRoles') && !pathEl.textContent.includes('%USERPROFILE%'),
+          pathEl ? pathEl.textContent : 'no #set-dev-path');
+        const line = $('#set-dev-missing');
+        add('スイッチが ON なのに置き場所が無い: 友達モードで動いている事の 1 行が出る（この言語の言葉）',
+          !!line && line.textContent === H.t('set.devMissingOn') && line.textContent.length > 0 && H.t('set.devMissingOn') !== 'set.devMissingOn'
+          && (lang.startsWith('ja') || line.textContent !== jaText),
+          (line ? line.textContent : 'no #set-dev-missing') + ' / lang=' + lang);
+        if (line && !hc) ratioAtLeast('... その 1 行は読める', ratio(textOn(line), bgOf(line)), 4.5);
+        if (line && !hc) ratioAtLeast('... 「見つかりません」も読める', ratio(textOn($('#set-dev-notfound')), bgOf($('#set-dev-notfound'))), 4.5);
+        add('... その 1 行は横にはみ出さない（折り返す）', !!line && line.scrollWidth <= line.clientWidth + 1 && line.getBoundingClientRect().height > 0,
+          line ? line.scrollWidth + ' > ' + line.clientWidth : 'no line');
+        add('スイッチは設定どおり ON で描かれる', !!$('#set-devBuild') && $('#set-devBuild').checked === true);
+        if (missBtn) {
+          window.__reply.pickModSource = { answer:{ ok:true, data:{ cancelled:true } } };
+          const n1 = window.__sent.length;
+          missBtn.click(); await wait(150);
+          const sent1 = window.__sent.slice(n1).filter(m => m.cmd === 'pickModSource');
+          add('「見つかりません」の時も、押すと pickModSource を 1 回だけ送る（場所は送らない）', sent1.length === 1 && JSON.stringify(sent1[0].args || {}) === '{}', JSON.stringify(window.__sent.slice(n1)));
+          delete window.__reply.pickModSource;
+        }
+        /* OFF にするのは通る（消えたフォルダに開発モードで閉じ込めない）: 本物のアプリは保存して開き直す。ここでは settings.set が 1 回送られる事を見る */
+        if ($('#set-devBuild')) {
+          const n2 = window.__sent.length;
+          $('#set-devBuild').click(); await wait(150);
+          const off = window.__sent.slice(n2).filter(m => m.cmd === 'settings.set' && m.args && m.args.key === 'devBuild');
+          add('ON → OFF は送られる（settings.set devBuild=false を 1 回）', off.length === 1 && off[0].args.value === false && $('#set-devBuild').checked === false, JSON.stringify(off));
+          SR.setPage('pocketroles'); await tick();
+          add('OFF にすると友達モードの 1 行は消える（欄・「見つかりません」・選ぶボタンは残る）',
+            !$('#set-dev-missing') && !!$('#set-dev-notfound') && !!$('#set-dev [data-cmd="pickModSource"]'),
+            ($('#set-dev-missing') ? 'line still there' : 'no line') + ' / ' + ($('#set-dev-notfound') ? 'notfound ok' : 'no notfound'));
+        }
+        /* スイッチ OFF で置き場所が無い（設定に devSource だけ残っている人）: 欄と「見つかりません」と選ぶボタン。1 行は出ない */
+        window.__emit({ type:'event', name:'shell', data:{ version:'1.1', devFolder:null, devMissing:true, devOn:false, mode:'friend' } });
+        await tick(); SR.setPage('pocketroles'); await tick();
+        add('スイッチが OFF なら友達モードの 1 行は出ない（欄と「見つかりません」と選ぶボタンは出る）',
+          !$('#set-dev-missing') && !!$('#set-dev-notfound') && !!$('#set-dev [data-cmd="pickModSource"]') && !!$('#set-devBuild') && !$('#set-devBuild').checked,
+          ($('#set-dev-missing') ? 'line there' : 'no line') + ' / ' + ($('#set-devBuild') ? 'checked=' + $('#set-devBuild').checked : 'no switch'));
+        /* OFF → ON は、置き場所が無いのでアプリが断る（dev_nofolder の言葉 + 設定どおり devBuild:false）: 言葉が出て、スイッチが戻る */
+        if ($('#set-devBuild')) {
+          $('#toast').textContent = '';
+          window.__reply['settings.set'] = { answer:{ ok:false, error:'NO-FOLDER', data:{ key:'devBuild', devBuild:false } } };
+          const n3 = window.__sent.length;
+          $('#set-devBuild').click(); await wait(200);
+          const on = window.__sent.slice(n3).filter(m => m.cmd === 'settings.set' && m.args && m.args.key === 'devBuild');
+          add('OFF → ON を押すと settings.set devBuild=true が 1 回送られる', on.length === 1 && on[0].args.value === true, JSON.stringify(on));
+          add('置き場所が無い時の ON は断られ、アプリの言葉（dev_nofolder）が知らせに出る', $('#toast').textContent === 'NO-FOLDER', $('#toast').textContent);
+          add('... スイッチは OFF に戻る（答えの devBuild:false どおり）', !!$('#set-devBuild') && $('#set-devBuild').checked === false && H.prefs.devBuild === false,
+            ($('#set-devBuild') ? 'checked=' + $('#set-devBuild').checked : 'no switch') + ' prefs=' + H.prefs.devBuild);
+          delete window.__reply['settings.set'];
+          $('#toast').textContent = '';
+        }
+      }
       H.closeAll();
       window.__emit({ type:'event', name:'shell', data:{ version:'1.1', devFolder:null, mode:'friend' } });
       await tick();
+      /* devMissing が無い devFolder:null は、今までどおり欄なし（普通の PC） */
+      SR.setPage('pocketroles'); await tick();
+      add('devMissing が無く devFolder も null なら、開発の欄は描かない（普通の PC。今までどおり）', !$('#set-dev'), $('#set-dev') ? 'set-dev drawn' : '');
+      H.closeAll();
     }
     /* ================= v1.3: プロフィールの絵（自分の画像） ================= */
     /* アプリが "shell" で渡す写し（本物は 256×256 の PNG。ここは 1×1 で足りる。tools/ なので data: の綴りを書いてよい）。ページは

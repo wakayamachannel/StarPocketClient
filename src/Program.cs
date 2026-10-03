@@ -111,7 +111,7 @@ namespace Starpocket.Client
                 if (ctx.DevFolderMissing)
                     log.Write("developer folder not found; settings.json still has " + (ctx.Settings.DevBuild ? "devBuild: true" : "")
                         + (ctx.Settings.DevBuild && !string.IsNullOrEmpty(ctx.Settings.DevSourcePath) ? ", " : "")
-                        + (!string.IsNullOrEmpty(ctx.Settings.DevSourcePath) ? "devSource: " + ctx.Settings.DevSourcePath : "")
+                        + (!string.IsNullOrEmpty(ctx.Settings.DevSourcePath) ? "devSource (the path is not written here)" : "")
                         + " - friend mode until a folder is picked in Settings (PocketRoles → 開発)");
                 log.Write("game copy: " + ctx.Paths.Modded);
                 log.Write("Steam: " + (ctx.SteamDir ?? "not found"));

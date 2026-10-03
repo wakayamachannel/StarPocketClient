@@ -12,6 +12,7 @@ using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Text;
+using System.Threading.Tasks;
 using Starpocket.Client.Core;
 
 namespace Starpocket.Client.SelfTest
@@ -35,6 +36,10 @@ namespace Starpocket.Client.SelfTest
             CopyPlaceTests(r);
             r.Section("");
         }
+
+        /// <summary>MoveFlow.Run を、画面の糸でない所（同期の文脈の無い別の糸）で回して待つ。自己点検の糸に WinForms の同期の文脈が付いていても、
+        /// await の続きがそこに戻ろうとして固まらない。</summary>
+        static MoveFlowResult Flow(Func<Task<MoveFlowResult>> run) => Task.Run(run).GetAwaiter().GetResult();
 
         // ------------------------------------------------------------------ 2026-10-01: where the mod copy lives
         /// <summary>設定 → Among Us の場所 →「場所を変える」（CopyPlace.cs / CopyMover.cs）。置いてよい所の判断と、本当に移す処理。
@@ -86,6 +91,31 @@ namespace Starpocket.Client.SelfTest
             r.Equal("check: inside the app's own data folder (the uninstall removes it)", "cp_protected", CopyPlace.Check(f));
             r.Check("cp_protected names the app's own folders in 3 languages",
                 S.T("ja", "cp_protected").Contains("このアプリ自身のフォルダ") && S.T("zh-CN", "cp_protected").Contains("本应用自己的文件夹") && S.T("en", "cp_protected").Contains("this app's own folders"));
+            // 2026-10-03（公開前の粗探し 6）: 逆向き。アプリ自身のフォルダが今のコピーの中（zip をコピーの中に広げた人）
+            f = ok(); f.Protected = f.Protected.Concat(new[] { @"C:\Users\u\Desktop\Among Us PocketRoles\StarPocket Client" }).ToArray();
+            r.Equal("check: the app itself sits inside the current copy -> refused (DeleteOld would eat the running Client)", "cp_app_inside", CopyPlace.Check(f));
+            f = ok(); f.Protected = f.Protected.Concat(new[] { @"C:\Users\u\Desktop\Among Us PocketRoles" }).ToArray();
+            r.Equal("check: the exe straight in the copy's folder -> refused too", "cp_app_inside", CopyPlace.Check(f));
+            f = ok(); f.Protected = f.Protected.Concat(new[] { @"C:\Users\u\Desktop\Among Us PocketRoles\StarPocket Client" }).ToArray(); f.CurrentExists = false;
+            r.Check("check: ... but with nothing to move there is nothing to delete, so it is allowed", CopyPlace.Check(f) == null, CopyPlace.Check(f));
+            f = ok(); f.Protected = f.Protected.Concat(new[] { @"C:\Users\u\Desktop\StarPocket Client" }).ToArray();
+            r.Check("check: the app beside the copy is fine", CopyPlace.Check(f) == null, CopyPlace.Check(f));
+            r.Check("cp_app_inside names the app and says nothing changed, in 3 languages",
+                S.T("ja", "cp_app_inside").Contains("StarPocket Client") && S.T("ja", "cp_app_inside").Contains("何も変えていません")
+                && S.T("zh-CN", "cp_app_inside").Contains("StarPocket Client") && S.T("zh-CN", "cp_app_inside").Contains("什么都没有改变")
+                && S.T("en", "cp_app_inside").Contains("StarPocket Client") && S.T("en", "cp_app_inside").Contains("Nothing was changed"));
+            // 2026-10-03（粗探し 10）: ほかのゲームストアのフォルダ
+            f = ok(); f.Target = @"D:\Epic Games\AmongUs\Among Us PocketRoles"; r.Equal("check: inside an Epic Games folder", "cp_otherstore", CopyPlace.Check(f));
+            f = ok(); f.Target = @"C:\XboxGames\Among Us PocketRoles"; r.Equal("check: inside XboxGames", "cp_otherstore", CopyPlace.Check(f));
+            f = ok(); f.Target = @"D:\WindowsApps\Among Us PocketRoles"; r.Equal("check: inside WindowsApps on another drive", "cp_otherstore", CopyPlace.Check(f));
+            f = ok(); f.Target = @"D:\epic games\Among Us PocketRoles"; r.Equal("check: the store folder in another case", "cp_otherstore", CopyPlace.Check(f));
+            f = ok(); f.Target = @"D:\My Epic Games Stuff\Among Us PocketRoles"; r.Check("check: a folder that only contains the name is fine", CopyPlace.Check(f) == null, CopyPlace.Check(f));
+            r.Check("OtherStore: names the store, null elsewhere", CopyPlace.OtherStore(@"D:\Epic Games\x") == "Epic Games" && CopyPlace.OtherStore(@"D:\Games\x") == null && CopyPlace.OtherStore(null) == null && CopyPlace.OtherStore("") == null);
+            r.Check("cp_otherstore names Epic Games and Xbox in 3 languages", new[] { "ja", "zh-CN", "en" }.All(l => S.T(l, "cp_otherstore").Contains("Epic Games") && S.T(l, "cp_otherstore").Contains("Xbox")));
+            // 2026-10-03（粗探し 5）: 残った物にはプレイヤー名の入ったログが含まれうる、とはっきり言う
+            r.Check("cp_done_left says the leftovers may hold logs with player names and are not deleted by the app, in 3 languages",
+                S.T("ja", "cp_done_left").Contains("プレイヤー名") && S.T("ja", "cp_done_left").Contains("手で消してください")
+                && S.T("zh-CN", "cp_done_left").Contains("玩家名") && S.T("en", "cp_done_left").Contains("player names"));
             // v1.1.2（持ち主の決定 2026-10-01 Q6、設計 B12）: 今までのランチャーは copyDir を読まないので、移した後に開くとデスクトップに
             // 2 つ目のコピーを作る。文は「もう開かないでください」と頼む。前の「環境変数 POCKETROLES_GAMEDIR も同じ場所に」は利用者に難しいのでやめた
             string[][] notAgain =
@@ -313,6 +343,113 @@ namespace Starpocket.Client.SelfTest
                     && S.T("zh-CN", "cp_undo_failed_copy").Contains("保持原样") && !S.T("zh-CN", "cp_undo_failed_copy").Contains("更改安装位置")
                     && S.T("en", "cp_undo_failed_copy").Contains("as they were") && !S.T("en", "cp_undo_failed_copy").Contains("Change location"));
             });
+            // ---- 2026-10-03（公開前の粗探し 5・7・8・9）
+            r.Test("probe: a network place is refused before anything is touched (粗探し 8)", () =>
+            {
+                string root = r.NewDir("copyplace-net");
+                string cur = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles"));
+                var sw = Stopwatch.StartNew();
+                var nf = CopyPlace.Probe(@"\\no-such-host-starpocket\share\Among Us PocketRoles", cur, Path.Combine(cur, "Among Us.exe"));
+                sw.Stop();
+                r.Check("\\\\ -> network, not writable, nothing measured", nf.Network && !nf.Writable && nf.NeededBytes == 0 && nf.OnlineOnlyFiles == 0);
+                r.Equal("refused as a network place", "cp_network", CopyPlace.Check(nf));
+                r.Check("... and quickly (no name lookup, no write test): under 2 s", sw.ElapsedMilliseconds < 2000, sw.ElapsedMilliseconds + " ms");
+                r.Check("the known folders are still filled in (Check needs them)", nf.Protected.Length >= 4 && nf.OneDrive.Length == 3);
+                char free = "ZYXWVUTSRQ".FirstOrDefault(c => !Directory.Exists(c + ":\\"));
+                if (free != '\0')
+                {
+                    var qf = CopyPlace.Probe(free + @":\Games\Among Us PocketRoles", cur, Path.Combine(cur, "Among Us.exe"));
+                    r.Check("a drive letter that is not there: network-like, refused without a write test", qf.Network && !qf.Writable && CopyPlace.Check(qf) == "cp_network", CopyPlace.Check(qf));
+                }
+                else r.Info("copy place: every drive letter Q-Z is in use on this PC; the mapped-drive case was not tried");
+            });
+            r.Test("probe: OneDrive \"online-only\" files in the current copy are counted (粗探し 7)", () =>
+            {
+                string root = r.NewDir("copyplace-online");
+                string cur = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles"));
+                string dll = Path.Combine(cur, @"BepInEx\plugins\PocketRoles.dll");
+                File.SetAttributes(dll, File.GetAttributes(dll) | FileAttributes.Offline);   // the one of the three marks user code may set itself
+                try
+                {
+                    var pf = CopyPlace.Probe(Path.Combine(root, @"Games\Among Us PocketRoles"), cur, Path.Combine(cur, "Among Us.exe"));
+                    r.Equal("one file counted", 1, pf.OnlineOnlyFiles);
+                    r.Check("the size still counts every file", pf.NeededBytes > 0);
+                    r.Check("the three marks are recognised, ordinary attributes are not",
+                        CopyPlace.IsOnlineOnly((FileAttributes)0x400000) && CopyPlace.IsOnlineOnly((FileAttributes)0x40000) && CopyPlace.IsOnlineOnly(FileAttributes.Offline)
+                        && !CopyPlace.IsOnlineOnly(FileAttributes.Normal) && !CopyPlace.IsOnlineOnly(FileAttributes.ReadOnly | FileAttributes.Archive));
+                    r.Check("cp_confirm_online carries the count and names OneDrive, in 3 languages", new[] { "ja", "zh-CN", "en" }.All(l => S.T(l, "cp_confirm_online", 7).Contains("7") && S.T(l, "cp_confirm_online", 7).Contains("OneDrive")));
+                }
+                finally { File.SetAttributes(dll, File.GetAttributes(dll) & ~FileAttributes.Offline); }
+                var none = CopyPlace.Probe(Path.Combine(root, @"Games\Among Us PocketRoles"), cur, Path.Combine(cur, "Among Us.exe"));
+                r.Equal("without the mark: none", 0, none.OnlineOnlyFiles);
+            });
+            r.Test("move: a new place too deep for Windows' path limit is refused before anything moves (粗探し 9)", () =>
+            {
+                string root = r.NewDir("copyplace-toolong");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles"));
+                string parent = Path.Combine(root, "D");
+                int pad = (FileCopy.MaxPath - 20) - (parent.Length + 1);   // the folder itself fits (239); "\BepInEx\plugins\PocketRoles.dll" (31 more) does not
+                if (pad < 1) { r.Info("copy place: the self-test folder is too deep to set this case up (" + parent.Length + " chars); skipped"); return; }
+                string to = Path.Combine(parent, new string('x', pad));
+                var m = new CopyMover { SameVolume = (a, b) => false };
+                var res = m.Move(from, to);
+                r.Check("refused with cp_toolong (not cp_locked)", !res.Ok && res.ErrorKey == "cp_toolong", res.ErrorKey + " " + res.Error);
+                r.Check("nothing moved, nothing made at the new place", whole(from) && !Directory.Exists(to));
+                var ren = new CopyMover { SameVolume = (a, b) => true }.Move(from, to);
+                r.Check("the same for a rename on the same drive (the files inside would be out of reach)", !ren.Ok && ren.ErrorKey == "cp_toolong" && whole(from) && !Directory.Exists(to));
+                string deep = new string('b', 40) + ".dll";
+                r.Equal("LongestAt counts the deepest file at the new place", (@"C:\x\a\" + deep).Length,
+                    CopyMover.LongestAt(@"C:\x", @"C:\src", new[] { new DirectoryInfo(@"C:\src\a") }, new[] { new FileInfo(@"C:\src\a\" + deep) }));
+                r.Equal("... and never less than the marker file's own path", (@"C:\x\" + CopyPlace.MarkerName).Length, CopyMover.LongestAt(@"C:\x", @"C:\src", new DirectoryInfo[0], new FileInfo[0]));
+                r.Check("cp_toolong names the 259 limit and says nothing changed, in 3 languages", new[] { "ja", "zh-CN", "en" }.All(l => S.T(l, "cp_toolong").Contains("259")) && S.T("ja", "cp_toolong").Contains("何も変えていません"));
+            });
+            r.Test("start: what a stopped move left is cleaned up from the mark in settings.json (粗探し 5)", () =>
+            {
+                string root = r.NewDir("copyplace-stopped");
+                string left = Path.Combine(root, @"D\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(left, CopyPlace.MarkerName));
+                SelfTestRunner.Touch(Path.Combine(left, @"BepInEx\PocketRoles\logs\game.log"), "Player: Someone");
+                var s = new ClientSettings();
+                s.SetMovingTo(left);
+                int saves = 0;
+                var log = new List<string>();
+                CopyMover.FinishStoppedMove(s, () => saves++, log.Add);
+                r.Check("the half-made copy (marker, logs) is gone", !Directory.Exists(left));
+                r.Check("the mark is cleared and saved once", s.MovingTo == "" && saves == 1);
+                r.Check("client.log says so", log.Any(l => l.Contains("cleaned up")), string.Join(" / ", log));
+
+                string mine = Path.Combine(root, @"Mine\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(mine, "Among Us.exe"), "exe");
+                var s2 = new ClientSettings(); s2.SetMovingTo(mine); saves = 0; log.Clear();
+                CopyMover.FinishStoppedMove(s2, () => saves++, log.Add);
+                r.Check("a folder without the marker (a finished copy): untouched, the mark is cleared anyway",
+                    File.Exists(Path.Combine(mine, "Among Us.exe")) && s2.MovingTo == "" && saves == 1 && log.Any(l => l.Contains("finished copy")), string.Join(" / ", log));
+
+                var s3 = new ClientSettings(); saves = 0;
+                CopyMover.FinishStoppedMove(s3, () => saves++, null);
+                r.Check("no mark: nothing happens, nothing saved", saves == 0);
+                string p = Path.Combine(root, "settings.json");
+                SelfTestRunner.Touch(p, "{\"movingTo\":\"D:\\\\x\"}");
+                ClientSettings unreadable;
+                using (File.Open(p, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) unreadable = ClientSettings.Load(p, null, 1, 0, null);   // held at start
+                CopyMover.FinishStoppedMove(unreadable, () => saves++, null);
+                r.Check("settings.json unreadable: nothing happens (粗探し 2)", unreadable.Unreadable && saves == 0);
+                CopyMover.FinishStoppedMove(null, () => saves++, null);
+                r.Check("no settings at all: never throws", saves == 0);
+
+                string held = Path.Combine(root, @"Held\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(held, CopyPlace.MarkerName));
+                string hf = SelfTestRunner.Touch(Path.Combine(held, "busy.bin"), "x");
+                var s4 = new ClientSettings(); s4.SetMovingTo(held); saves = 0;
+                using (File.Open(hf, FileMode.Open, FileAccess.Read, FileShare.None)) CopyMover.FinishStoppedMove(s4, () => saves++, log.Add);
+                r.Check("a leftover that cannot be removed yet: the mark stays for the next start", s4.MovingTo == held && saves == 0 && Directory.Exists(held));
+                // the marker is deleted LAST: a leftover that could not be removed completely is still ours next time (before, DeleteTree
+                // took the marker first, and the rest looked like somebody's folder for ever)
+                r.Check("... and the leftover keeps its marker, so it is still recognised as ours", File.Exists(Path.Combine(held, CopyPlace.MarkerName)));
+                var s5 = new ClientSettings(); s5.SetMovingTo(held); saves = 0;
+                CopyMover.FinishStoppedMove(s5, () => { throw new IOException("disk full"); }, log.Add);
+                r.Check("the save fails: the folder is still cleaned, the failure is logged, never thrown", !Directory.Exists(held) && s5.MovingTo == "" && log.Any(l => l.Contains("disk full")));
+            });
             r.Test("move: a marker inside the copy itself is not carried to the new place", () =>
             {
                 string root = r.NewDir("copyplace-srcmarker");
@@ -336,6 +473,162 @@ namespace Starpocket.Client.SelfTest
                 SelfTestRunner.Touch(Path.Combine(mine, "my-notes.txt"), "mine");
                 r.Check("a folder without the marker: untouched", m.ClearLeftover(mine) && File.ReadAllText(Path.Combine(mine, "my-notes.txt")) == "mine");
                 r.Check("nothing there: nothing to do", m.ClearLeftover(Path.Combine(root, "none")));
+            });
+            // ---- 2026-10-03（崩す係 5・6・7・11、M12）
+            r.Test("start: the clean-up is split - the disk part says whether the mark may go, the settings part clears it (崩す係 6)", () =>
+            {
+                string root = r.NewDir("copyplace-tidy");
+                string left = Path.Combine(root, @"D\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(left, CopyPlace.MarkerName));
+                SelfTestRunner.Touch(Path.Combine(left, "half.bin"), "x");
+                var s = new ClientSettings(); s.SetMovingTo(left);
+                r.Check("the disk part removes the leftover and says the mark may go, without touching the settings", CopyMover.TidyStoppedMove(s, null) && !Directory.Exists(left) && s.MovingTo == left);
+                int saves = 0;
+                CopyMover.ForgetStoppedMove(s, () => saves++, null);
+                r.Check("the settings part clears the mark and saves once", s.MovingTo == "" && saves == 1);
+                r.Check("no mark, no settings: the disk part has nothing to do", !CopyMover.TidyStoppedMove(new ClientSettings(), null) && !CopyMover.TidyStoppedMove(null, null));
+                string held = Path.Combine(root, @"Held\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(held, CopyPlace.MarkerName));
+                string hf = SelfTestRunner.Touch(Path.Combine(held, "busy.bin"), "x");
+                var s2 = new ClientSettings(); s2.SetMovingTo(held);
+                bool may;
+                using (File.Open(hf, FileMode.Open, FileAccess.Read, FileShare.None)) may = CopyMover.TidyStoppedMove(s2, null);
+                r.Check("a leftover that cannot be removed: the mark stays (false), the marker too", !may && s2.MovingTo == held && File.Exists(Path.Combine(held, CopyPlace.MarkerName)));
+                var log = new List<string>();
+                CopyMover.ForgetStoppedMove(s2, () => { throw new IOException("disk full"); }, log.Add);
+                r.Check("the settings part never throws", s2.MovingTo == "" && log.Any(l => l.Contains("disk full")));
+                CopyMover.ForgetStoppedMove(null, () => saves++, null);
+                r.Check("... not even without settings", saves == 1);
+            });
+            r.Test("move: a marker left inside the copy is removed before a rename, so the renamed copy never looks like a stopped move (崩す係 7)", () =>
+            {
+                string root = r.NewDir("copyplace-straymark");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles")), to = Path.Combine(root, @"Games\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(from, CopyPlace.MarkerName), "left over");
+                var log = new List<string>();
+                var res = new CopyMover { SameVolume = (a, b) => true, Log = log.Add }.Move(from, to);
+                r.Check("renamed", res.Ok && res.Renamed && whole(to) && !Directory.Exists(from), res.ErrorKey + " " + res.Error);
+                r.Check("no marker at the new place", !File.Exists(Path.Combine(to, CopyPlace.MarkerName)));
+                r.Check("client.log says the stray marker was removed", log.Any(l => l.Contains("stray marker")), string.Join(" / ", log));
+                // a crash right after the rename, before copyDir was saved: the next start finds this place in movingTo and must leave it alone
+                var s = new ClientSettings(); s.SetMovingTo(to); int saves = 0;
+                CopyMover.FinishStoppedMove(s, () => saves++, log.Add);
+                r.Check("the next start leaves the finished copy alone and only clears the mark", whole(to) && s.MovingTo == "" && saves == 1);
+                // the stray marker is held: no rename; the copy path runs instead (it never carries the marker)
+                string from2 = makeCopy(Path.Combine(root, @"Desktop2\Among Us PocketRoles")), to2 = Path.Combine(root, @"Games2\Among Us PocketRoles");
+                string stray = SelfTestRunner.Touch(Path.Combine(from2, CopyPlace.MarkerName), "left over");
+                MoveResult res2;
+                using (File.Open(stray, FileMode.Open, FileAccess.Read, FileShare.None)) res2 = new CopyMover { SameVolume = (a, b) => true, Log = log.Add }.Move(from2, to2);
+                r.Check("a held marker: copied instead of renamed, the new place whole and without the marker",
+                    res2.Ok && !res2.Renamed && whole(to2) && !File.Exists(Path.Combine(to2, CopyPlace.MarkerName)) && whole(from2), res2.ErrorKey + " " + res2.Error);
+            });
+            r.Test("move flow: the mark is written before the copy starts, cleared with copyDir, cleared again on failure (崩す係 5)", () =>
+            {
+                string target = @"D:\New\Among Us PocketRoles";
+                var s = new ClientSettings();
+                s.SetCopyDir(@"C:\Old\Among Us PocketRoles");
+                var saved = new List<string>();   // what settings.json would hold after each save: "copyDir|movingTo"
+                string markAtMove = null;
+                var ok = Flow(() => MoveFlow.Run(s, () => { saved.Add(s.CopyDir + "|" + s.MovingTo); return true; }, target,
+                    () => { markAtMove = s.MovingTo; return Task.FromResult(new MoveResult { Ok = true, Files = 4 }); },
+                    m => Task.FromResult(true), () => Task.FromResult(true), null));
+                r.Check("ok, the old copy removed", ok.Ok && ok.Clean, ok.ErrorKey);
+                r.Equal("the moving mark was in settings.json while the copy ran", target, markAtMove);
+                r.Equal("two saves: the mark, then copyDir with the mark cleared", @"C:\Old\Among Us PocketRoles|" + target + ";" + target + "|", string.Join(";", saved));
+                r.Check("afterwards: copyDir is the new place, no mark", s.CopyDir == target && s.MovingTo == "");
+
+                bool deleteAsked = false;
+                var ren = Flow(() => MoveFlow.Run(new ClientSettings(), () => true, target, () => Task.FromResult(new MoveResult { Ok = true, Renamed = true }),
+                    m => Task.FromResult(true), () => { deleteAsked = true; return Task.FromResult(false); }, null));
+                r.Check("a rename: clean, the old place is not deleted separately", ren.Ok && ren.Clean && !deleteAsked);
+                var left = Flow(() => MoveFlow.Run(new ClientSettings(), () => true, target, () => Task.FromResult(new MoveResult { Ok = true }),
+                    m => Task.FromResult(true), () => Task.FromResult(false), null));
+                r.Check("the old copy left behind: ok but not clean (cp_done_left)", left.Ok && !left.Clean);
+
+                var s3 = new ClientSettings(); s3.SetCopyDir(@"C:\Old");
+                var saves3 = new List<string>();
+                var failed = Flow(() => MoveFlow.Run(s3, () => { saves3.Add(s3.CopyDir + "|" + s3.MovingTo); return true; }, target,
+                    () => Task.FromResult(new MoveResult { Ok = false, ErrorKey = "cp_space" }), m => Task.FromResult(true), () => Task.FromResult(true), null));
+                r.Check("the move fails: the move's own key, nothing adopted", !failed.Ok && failed.ErrorKey == "cp_space" && failed.Moved != null && s3.CopyDir == @"C:\Old");
+                r.Equal("the mark was written, then cleared; copyDir never changed", @"C:\Old|" + target + @";C:\Old|", string.Join(";", saves3));
+                var noKey = Flow(() => MoveFlow.Run(new ClientSettings(), () => true, target, () => Task.FromResult<MoveResult>(null), m => Task.FromResult(true), () => Task.FromResult(true), null));
+                r.Check("no answer from the move: cp_failed", !noKey.Ok && noKey.ErrorKey == "cp_failed");
+
+                bool moveAsked = false;
+                var noMark = Flow(() => MoveFlow.Run(new ClientSettings(), () => false, target, () => { moveAsked = true; return Task.FromResult(new MoveResult { Ok = true }); },
+                    m => Task.FromResult(true), () => Task.FromResult(true), null));
+                r.Check("the mark cannot be saved: cp_save_failed, the copy never started", !noMark.Ok && noMark.ErrorKey == "cp_save_failed" && !moveAsked && noMark.Moved == null);
+
+                var s4 = new ClientSettings(); int n = 0; bool undone = false;
+                Func<bool> secondFails = () => { n++; return n != 2; };   // 1: the mark, 2: copyDir (fails), 3: the mark cleared
+                var undo = Flow(() => MoveFlow.Run(s4, secondFails, target, () => Task.FromResult(new MoveResult { Ok = true }),
+                    m => { undone = true; return Task.FromResult(true); }, () => Task.FromResult(true), null));
+                r.Check("copyDir cannot be saved: undone, cp_save_failed, no mark left", !undo.Ok && undo.ErrorKey == "cp_save_failed" && undone && s4.MovingTo == "" && s4.CopyDir == "", undo.ErrorKey);
+                n = 0;
+                var undoFail = Flow(() => MoveFlow.Run(new ClientSettings(), secondFails, target, () => Task.FromResult(new MoveResult { Ok = true, Renamed = true }),
+                    m => Task.FromResult(false), () => Task.FromResult(true), null));
+                r.Equal("... and when the undo fails too: the rename's words", "cp_undo_failed", undoFail.ErrorKey);
+                n = 0;
+                var undoFailCopy = Flow(() => MoveFlow.Run(new ClientSettings(), secondFails, target, () => Task.FromResult(new MoveResult { Ok = true }),
+                    m => Task.FromResult(false), () => Task.FromResult(true), null));
+                r.Equal("... the copy's words for a copy", "cp_undo_failed_copy", undoFailCopy.ErrorKey);
+
+                // the real thing end to end: a copy to "another drive" inside the self-test folder, settings.json on disk
+                string root = r.NewDir("copyplace-flow");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles")), to = Path.Combine(root, @"D\Among Us PocketRoles");
+                string sp = Path.Combine(root, "settings.json");
+                var real = new ClientSettings(); real.SetCopyDir(from); real.Save(sp);
+                var mover = new CopyMover { SameVolume = (a, b) => false };
+                string onDiskDuringMove = null;
+                var done = Flow(() => MoveFlow.Run(real, () => { real.Save(sp); return true; }, to,
+                    () => { onDiskDuringMove = File.ReadAllText(sp); return Task.Run(() => mover.Move(from, to)); },
+                    m => Task.Run(() => mover.Undo(m, from, to)), () => Task.Run(() => mover.DeleteOld(from)), null));
+                r.Check("end to end: moved, the old place gone, settings.json names the new place without a mark",
+                    done.Ok && done.Clean && whole(to) && !Directory.Exists(from) && ClientSettings.Load(sp).CopyDir == to && ClientSettings.Load(sp).MovingTo == "", done.ErrorKey);
+                r.Check("... and while the copy ran, settings.json on disk carried the mark", onDiskDuringMove != null && onDiskDuringMove.Contains("\"movingTo\":"), onDiskDuringMove);
+            });
+            r.Test("probe: a mapped network drive (Z: -> \\\\nas) is refused by its drive type, before any write test (崩す係 5 の M12)", () =>
+            {
+                string root = r.NewDir("copyplace-mapped");
+                string cur = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles"));
+                string games = Path.Combine(root, "Games");
+                Directory.CreateDirectory(games);
+                string tgt = Path.Combine(games, "Among Us PocketRoles");
+                string asked = null;
+                var nf = CopyPlace.Probe(rt => { asked = rt; return DriveType.Network; }, tgt, cur, Path.Combine(cur, "Among Us.exe"));
+                r.Check("the drive type was asked for this drive's root", asked != null && string.Equals(asked, Path.GetPathRoot(Path.GetFullPath(tgt)), StringComparison.OrdinalIgnoreCase), asked);
+                r.Check("network: not writable, nothing measured, no write test was run", nf.Network && !nf.Writable && nf.NeededBytes == 0 && Directory.GetFileSystemEntries(games).Length == 0);
+                r.Equal("refused as a network place", "cp_network", CopyPlace.Check(nf));
+                var fixedDrive = CopyPlace.Probe(rt => DriveType.Fixed, tgt, cur, Path.Combine(cur, "Among Us.exe"));
+                r.Check("the same place on a fixed drive: probed, writable, measured, allowed", !fixedDrive.Network && fixedDrive.Writable && fixedDrive.NeededBytes > 0 && CopyPlace.Check(fixedDrive) == null, CopyPlace.Check(fixedDrive));
+                var unknown = CopyPlace.Probe(rt => null, tgt, cur, Path.Combine(cur, "Among Us.exe"));
+                r.Check("the type cannot be read at all: not refused for that (the write test decides)", !unknown.Network && unknown.Writable);
+                r.Check("the real probe agrees with the fixed-drive one here", !CopyPlace.Probe(tgt, cur, Path.Combine(cur, "Among Us.exe")).Network);
+            });
+            r.Test("check: a place too deep says cp_toolong, not cp_write (崩す係 11)", () =>
+            {
+                Func<int, string> targetOf = len => @"D:\" + new string('x', len - 3 - 21) + @"\Among Us PocketRoles";   // a target of exactly len characters
+                var f = ok(); f.Writable = false; f.LongestRelative = 40;
+                f.Target = targetOf(FileCopy.MaxPath - 1 - 40);   // 218: the deepest file lands on 259 - just fits
+                r.Equal("just fits: the write test's answer stands", "cp_write", CopyPlace.Check(f));
+                f.Target = targetOf(FileCopy.MaxPath - 40);        // 219: 260 - too long, said before cp_write
+                r.Equal("one deeper: cp_toolong, whatever the write test said", "cp_toolong", CopyPlace.Check(f));
+                f.Writable = true;
+                r.Equal("... also when the folder is writable", "cp_toolong", CopyPlace.Check(f));
+                var none = ok(); none.CurrentExists = false; none.LongestRelative = 0; none.Writable = false;
+                none.Target = targetOf(FileCopy.MaxPath - 1 - CopyPlace.MarkerName.Length);
+                r.Equal("no copy yet: the marker file's own path is the yardstick (fits)", "cp_write", CopyPlace.Check(none));
+                none.Target = targetOf(FileCopy.MaxPath - CopyPlace.MarkerName.Length);
+                r.Equal("... one deeper: too long", "cp_toolong", CopyPlace.Check(none));
+                // the probe measures the deepest file of the current copy
+                string root = r.NewDir("copyplace-longest");
+                string cur = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles"));
+                int online, longest;
+                CopyPlace.Measure(cur, out online, out longest);
+                r.Equal("Measure: the deepest file, relative to the copy", @"BepInEx\config\jp.pocketroles.mod.cfg".Length, longest);
+                var pf = CopyPlace.Probe(Path.Combine(root, @"Games\Among Us PocketRoles"), cur, Path.Combine(cur, "Among Us.exe"));
+                r.Equal("Probe carries it", @"BepInEx\config\jp.pocketroles.mod.cfg".Length, pf.LongestRelative);
+                r.Equal("no copy: 0", 0, CopyPlace.Probe(Path.Combine(root, @"Games\Among Us PocketRoles"), Path.Combine(root, "none"), Path.Combine(root, @"none\Among Us.exe")).LongestRelative);
             });
             r.Test("move: the old copy's game is running -> the old copy is not deleted", () =>
             {

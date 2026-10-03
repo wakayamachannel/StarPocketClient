@@ -182,6 +182,27 @@ namespace Starpocket.Client.Shell
             return Kind.Unknown;
         }
 
+        /// <summary>settings.json を書く（ClientApp.SaveSettings の中身。2026-10-03 崩す係 5 の M20: 画面の無い所に出して自己点検が見る）。
+        /// 起動時に読めなかった回（<see cref="ClientSettings.Unreadable"/>）は書かずに set_unreadable の文で断る（既定値で上書きして copyDir・
+        /// devSource・プロフィールを消していた。粗探し 2）。自動の保存（cleanupArmed・トレイの知らせの印・移動中の印）も人が押した保存も同じ。
+        /// 書けなければ err の文。</summary>
+        public static Dictionary<string, object> SaveSettings(ClientSettings s, string path, string lang, Action<string> log)
+        {
+            log = log ?? (_ => { });
+            if (s == null) return Fail("no settings");
+            if (s.Unreadable)
+            {
+                log("settings.json: not written (the file could not be read at start)");
+                return Fail(S.T(lang, "set_unreadable"));
+            }
+            try { s.Save(path); return Ok(); }
+            catch (Exception ex)
+            {
+                log("settings.json: " + ex.Message);
+                return Fail(S.T(lang, "err", ex.Message));
+            }
+        }
+
         // ---- answers
         public static Dictionary<string, object> Ok(object data = null)
         {

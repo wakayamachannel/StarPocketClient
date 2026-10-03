@@ -115,6 +115,20 @@ jobs:
           if ($bad.Count -gt 0) { $bad | ForEach-Object { Write-Host $_ }; throw "the news still says it is not out yet: write the mod release's published_at there (then tools\import-ui.ps1) before the tag" }
           Write-Host "the news has the mod's release time"
 
+      # 2026-10-03 (the review before 1.1.2, item 12): the four version places agree with each other (the step below and the
+      # self-test), but nothing compared them with the TAG. A tag "v1.1.3" on a commit whose csproj still says 1.1.2 built
+      # green and would have been released under the wrong number. The tag must be exactly "v" + the csproj's <Version>.
+      - name: A release tag names the version it builds
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $csproj = [xml](Get-Content "StarpocketClient.csproj")
+          $version = ($csproj.Project.PropertyGroup.Version | Where-Object { $_ }) | Select-Object -First 1
+          if (-not $version) { throw "the csproj has no <Version>" }
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -ne ("v" + $version)) { throw "the tag is '$tag' but the csproj says version '$version' (the tag must be 'v$version')" }
+          Write-Host "tag $tag = v$version"
+
       - name: Check the exe's identity
         shell: pwsh
         run: |
@@ -142,6 +156,29 @@ jobs:
           # (that the icon really reached the exe is asserted by the self-test above, which reads the exe's own
           #  RT_GROUP_ICON resource - src\SelfTest\IdentitySelfTests.cs)
 
+      # 2026-10-03 (item 13): the exe is not code-signed yet, so the one thing a careful person can check is the SHA-256.
+      # The hashes of what is uploaded are printed in the log (where they cannot be edited after the fact) and written
+      # into SHA256SUMS.txt next to the exe, in the format "sha256 *path" that `Get-FileHash` / `certutil -hashfile`
+      # and sha256sum -c understand. The release notes carry the ZIP's own hash (GitHub shows it beside each asset);
+      # this list is for whoever unpacks the zip and wants to compare the exe with what this run built (README「署名について」).
+      # Only what the upload step below ships is hashed: the .pdb and tools\2_アプリで確かめる.cmd (copied to bin\Release by the
+      # csproj for local use) are not in the artifact, so a line for them would make `sha256sum -c` report a missing file.
+      # SHA256SUMS.txt itself is not hashed: the log is the record of it.
+      - name: SHA-256 of the build
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path ".\bin\Release").Path
+          $files = Get-ChildItem -Path $root -Recurse -File |
+            Where-Object { $_.Name -ne "SHA256SUMS.txt" -and $_.Extension -ne ".pdb" -and $_.Extension -ne ".cmd" -and $_.Name -ne "Microsoft.Web.WebView2.Wpf.dll" } |
+            Sort-Object FullName
+          $lines = foreach ($f in $files) {
+            $rel = $f.FullName.Substring($root.Length + 1).Replace("\", "/")
+            "{0} *{1}" -f (Get-FileHash -Algorithm SHA256 -Path $f.FullName).Hash.ToLower(), $rel
+          }
+          $lines | ForEach-Object { Write-Host $_ }
+          [IO.File]::WriteAllLines((Join-Path $root "SHA256SUMS.txt"), $lines, (New-Object System.Text.UTF8Encoding $false))
+          if (-not ($lines | Where-Object { $_ -match '^[0-9a-f]{64} \*StarPocket Client\.exe$' })) { throw "the exe was not hashed" }
+
       # what a player would unpack: the exe with the files that must sit next to it.
       # bin/Release/aegis/** matches nothing here: aegis\definitions.txt and .sig are not in the repository (the owner
       # attaches them to the release instead), and if-no-files-found only fires when the whole list finds nothing.
@@ -160,6 +197,7 @@ jobs:
             bin/Release/licenses/**
             bin/Release/LICENSE
             bin/Release/NOTICE
+            bin/Release/SHA256SUMS.txt
 
       - name: Keep the self-test report
         if: always()

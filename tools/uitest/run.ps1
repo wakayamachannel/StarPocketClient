@@ -89,7 +89,9 @@ function Line([string]$s) { Write-Output $s }
 
 $profDir = Join-Path $work 'profile'
 $edgeArgs = @(
-    '--headless=new', '--mute-audio', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check',
+    # --disable-gpu (2026-10-03): the check must not touch the GPU (the owner plays games on this PC while checks run);
+    # headless Edge draws with its software path, which is all a layout check needs
+    '--headless=new', '--disable-gpu', '--mute-audio', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check',
     '--disable-extensions', '--disable-background-networking', '--disable-sync', '--no-pings',
     '--disable-features=Translate,MediaRouter',
     # every name but the loopback file server fails to resolve: this test can reach nothing at all (quoted, the value

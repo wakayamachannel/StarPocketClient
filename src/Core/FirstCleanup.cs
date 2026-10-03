@@ -14,7 +14,14 @@
 //     この起動の片づけを全部飛ばして印を書く。2 回目の起動からは今までどおり片づける（30 日・7 日の決まりは 1 日も変えていない。
 //     プレイヤー名を 30 日で消す約束のため）。
 //   - 印を書けなかった時は、次の起動もまた飛ばす（消さない側に倒す）。
-//   - 窓の無い --action（Program.NewHeadless）は印を見るだけで、書かない。「初めて開いた時」はアプリとしての起動のこと。
+//   - 2026-10-03（公開前の粗探し 2）: settings.json があるのに読めなかった回（ClientSettings.Unreadable）も、何も消さず、印も書かない。
+//   - 窓の無い --action（Program.NewHeadless → Program.ActionMarks）も、2026-10-03（粗探し 14）から同じく Decide を通す。それまでは印を見るだけだったので、
+//     窓を一度も開かず --action だけで使う人には印が付かず、30 日の削除がずっと始まらなかった（プレイヤー名を 30 日で消す約束に
+//     当たる）。初めての実行は何も消さず印だけ書く、という決まりは窓の起動と同じ。日ごとの zip は今までどおり --action では作らない。
+//     2026-10-03（崩す係 3）: --action が印を書くのは作業の鍵（SPEC 5.1）を取れた時だけ。窓のアプリが作業中なら、印はそのまま読むだけ。
+//     書く時も、起動時に読んだ設定を丸ごと書き戻さず、今のファイルを読み直して印だけ写す（Program.SaveMarks）。
+//   - 2026-10-03（崩す係 1）: 中身が壊れた settings.json は ClientSettings.Load が脇へ名前を変えて残し（settings.json.broken-<日時>）、既定値で続ける。
+//     その回は「初めて」として印を書く（壊れた物に Unreadable を立てたままだと、30 日の削除が二度と始まらなかった）。
 //   - v1.1.1 以前から使っている人も、この版で初めて開いた 1 回は片づけない（印がまだ無いため）。1 回遅れるだけで、困る事は無い。
 //   - 「場所を変える」や開発の切り替えでアプリが開き直した時は、もう 2 回目の起動として片づける。
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -32,6 +39,13 @@ namespace Starpocket.Client.Core
             log = log ?? (_ => { });
             if (settings == null) return false;
             if (settings.CleanupArmed) return true;
+            // 2026-10-03（公開前の粗探し 2）: settings.json はあるのに読めなかった回。印が無いのは「初めて」ではなく「読めなかった」だけ
+            // かもしれないので、消さない側に倒し、既定値で上書きもしない（copyDir・devSource・プロフィールが消えていた）。次の起動でまた決める
+            if (settings.Unreadable)
+            {
+                log("clean-up: settings.json is there but could not be read this time - nothing is deleted and nothing is written; the next start decides again");
+                return false;
+            }
             settings.CleanupArmed = true;
             try
             {

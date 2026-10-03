@@ -495,7 +495,83 @@ namespace Starpocket.Client.SelfTest
                 var s3 = ClientSettings.Load(p);
                 r.Check("invalid values -> defaults", s3.Close == "tray" && s3.Lang == "auto");
                 File.WriteAllText(p, "not json");
-                r.Check("broken file -> defaults", ClientSettings.Load(p).Close == "tray");
+                // 2026-10-03（公開前の粗探し 2）: ファイルはあるのに読めない → Unreadable。その起動では一度も書かない（既定値で上書きして
+                // copyDir・devSource・プロフィールを消していた）。
+                // 2026-10-03（崩す係 1）: ただし「中身が壊れている」のは開き直しても直らないので、Unreadable のままにせず、settings.json.broken-<日時> に
+                // 名前を変えて残し、既定値で続ける（書ける）。Unreadable は「掴まれていた」時だけ
+                var logs = new List<string>();
+                var when = new DateTime(2026, 10, 3, 13, 5, 7);
+                var broken = ClientSettings.Load(p, logs.Add, 1, 0, () => when);
+                r.Check("broken file -> defaults, NOT unreadable (it is put aside instead)", !broken.Unreadable && broken.Close == "tray");
+                r.Equal("... put aside as settings.json.broken-<stamp>", p + ".broken-20261003-130507", broken.BrokenMovedTo);
+                r.Check("... the broken content is kept there, byte for byte", File.Exists(broken.BrokenMovedTo) && File.ReadAllText(broken.BrokenMovedTo) == "not json" && !File.Exists(p));
+                r.Check("... and client.log says so", logs.Any(l => l.Contains("put aside") && l.Contains("settings.json.broken-20261003-130507")), string.Join(" / ", logs));
+                broken.SetCopyDir(@"D:\Games\Among Us PocketRoles");
+                broken.Save(p);
+                r.Check("... Save works again (a fresh file; the next start reads it)", ClientSettings.Load(p).CopyDir == @"D:\Games\Among Us PocketRoles");
+                File.WriteAllText(p, "[]");
+                var array = ClientSettings.Load(p, null, 1, 0, () => when);
+                r.Equal("a JSON array is not our file either: put aside, with -2 because the first name is taken", p + ".broken-20261003-130507-2", array.BrokenMovedTo);
+                File.WriteAllBytes(p, new byte[0]);
+                r.Check("a 0-byte file (a power cut): put aside", ClientSettings.Load(p, null, 1, 0, () => when.AddSeconds(1)).BrokenMovedTo == p + ".broken-20261003-130508" && !File.Exists(p));
+                File.WriteAllBytes(p, new byte[300]);
+                r.Check("a NUL-filled file (a power cut): put aside", ClientSettings.Load(p, null, 1, 0, () => when.AddSeconds(2)).BrokenMovedTo != null && !File.Exists(p));
+                File.WriteAllBytes(p, new byte[Json.MaxFileBytes + 1]);
+                r.Check("a file over 4 MB is not ours: put aside, nothing read into memory", ClientSettings.Load(p, null, 1, 0, () => when.AddSeconds(3)).BrokenMovedTo != null && !File.Exists(p));
+                foreach (var f in Directory.GetFiles(d, "settings.json.broken-*")) File.Delete(f);
+                File.WriteAllText(p, "{\"close\":\"quit\",\"copyDir\":\"D:\\\\Games\\\\Among Us PocketRoles\"}");
+                var sw = Stopwatch.StartNew();
+                using (File.Open(p, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    logs.Clear();
+                    var locked = ClientSettings.Load(p, logs.Add);
+                    sw.Stop();
+                    r.Check("a file held by another program -> unreadable, defaults, nothing written", locked.Unreadable && locked.Close == "tray" && locked.CopyDir == "" && locked.BrokenMovedTo == null);
+                    r.Check("... after a few short retries (about 300 ms, under 2 s)", sw.ElapsedMilliseconds >= 2 * ClientSettings.ReadRetryDelayMs - 50 && sw.ElapsedMilliseconds < 2000, sw.ElapsedMilliseconds + " ms");
+                    r.Check("... and client.log says it was tried " + ClientSettings.ReadRetries + " times", logs.Any(l => l.Contains("after " + ClientSettings.ReadRetries + " tries")), string.Join(" / ", logs));
+                    bool refused = false;
+                    try { locked.Save(p); } catch (IOException) { refused = true; }
+                    r.Check("... and Save refuses (the defaults never go over it)", refused);
+                }
+                r.Check("... the file is untouched", File.ReadAllText(p).Contains("\"copyDir\""));
+                var after = ClientSettings.Load(p);
+                r.Check("the same file once it is free again: read, not unreadable", !after.Unreadable && after.Close == "quit" && after.CopyDir == @"D:\Games\Among Us PocketRoles");
+                // 掴んでいた物が途中で手放す（ウイルス対策・OneDrive の一瞬）: 読み直しで読める
+                var hold = File.Open(p, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                var release = new System.Threading.Thread(() => { System.Threading.Thread.Sleep(120); hold.Dispose(); }) { IsBackground = true };
+                release.Start();
+                var retried = ClientSettings.Load(p, null, 10, 60, null);
+                release.Join();
+                r.Check("held only for a moment: the retry reads it (not unreadable, values kept)", !retried.Unreadable && retried.CopyDir == @"D:\Games\Among Us PocketRoles");
+                r.Check("a missing file is not \"unreadable\" (a first start may write)", !ClientSettings.Load(Path.Combine(d, "none.json")).Unreadable);
+                r.Check("in_unreadable names install, repair and the uninstall, and asks to open the app again, in 3 languages",
+                    S.T("ja", "in_unreadable").Contains("インストール") && S.T("ja", "in_unreadable").Contains("アンインストール") && S.T("ja", "in_unreadable").Contains("開き直して")
+                    && S.T("zh-CN", "in_unreadable").Contains("安装") && S.T("zh-CN", "in_unreadable").Contains("卸载") && S.T("zh-CN", "in_unreadable").Contains("重新打开")
+                    && S.T("en", "in_unreadable").Contains("install") && S.T("en", "in_unreadable").Contains("uninstall") && S.T("en", "in_unreadable").Contains("Open the app again"));
+                // 2026-10-03（崩す係 5 の M20）: 画面の保存の中身（Bridge.SaveSettings）。読めなかった回は set_unreadable の文、書けなければ err の文
+                string lockedPath = Path.Combine(d, "locked.json");
+                File.WriteAllText(lockedPath, "{\"close\":\"quit\"}");
+                ClientSettings unreadable;
+                using (File.Open(lockedPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) unreadable = ClientSettings.Load(lockedPath, null, 1, 0, null);
+                logs.Clear();
+                var refusedSave = Bridge.SaveSettings(unreadable, lockedPath, "ja", logs.Add);
+                r.Check("Bridge.SaveSettings: an unreadable start is refused with set_unreadable, the file untouched, client.log says so",
+                    refusedSave["ok"] is bool rok && !rok && (string)refusedSave["error"] == S.T("ja", "set_unreadable") && File.ReadAllText(lockedPath) == "{\"close\":\"quit\"}" && logs.Any(l => l.Contains("not written")), string.Join(" / ", logs));
+                r.Check("... in the viewer's language", (string)Bridge.SaveSettings(unreadable, lockedPath, "en", null)["error"] == S.T("en", "set_unreadable"));
+                var fine = ClientSettings.Load(lockedPath);
+                fine.SetClose("tray");
+                r.Check("... a readable one is saved and answers ok", Bridge.SaveSettings(fine, lockedPath, "ja", null)["ok"] is bool sok && sok && ClientSettings.Load(lockedPath).Close == "tray");
+                var cannot = Bridge.SaveSettings(fine, Path.Combine(lockedPath, "x.json"), "ja", null);   // "inside" a file: cannot be written
+                r.Check("... a save that fails answers the err text, never throws", cannot["ok"] is bool cok && !cok && ((string)cannot["error"]).Length > 0 && (string)cannot["error"] != S.T("ja", "set_unreadable"));
+                r.Check("... no settings: refused, never throws", Bridge.SaveSettings(null, lockedPath, "ja", null)["ok"] is bool nok && !nok);
+                // 2026-10-03（粗探し 5）: 「移動中」の印（movingTo）。写している間だけ書く
+                after.SetMovingTo(@"E:\Games\Among Us PocketRoles");
+                after.Save(p);
+                r.Check("movingTo: written while set, read back", File.ReadAllText(p).Contains("\"movingTo\":\"E:\\\\Games\\\\Among Us PocketRoles\"") && ClientSettings.Load(p).MovingTo == @"E:\Games\Among Us PocketRoles");
+                after.SetMovingTo(null);
+                after.Save(p);
+                r.Check("movingTo: gone once cleared", !File.ReadAllText(p).Contains("movingTo") && ClientSettings.Load(p).MovingTo == "");
+                r.Check("movingTo: the page cannot set it", !Bridge.SettingKeys.Contains("movingTo"));
                 r.Check("no .tmp left", !File.Exists(p + ".tmp"));
 
                 var s4 = new ClientSettings();
@@ -877,6 +953,20 @@ namespace Starpocket.Client.SelfTest
                 o = f.Launcher(paths).Launch(false, _ => { });
                 r.Check("friend not installed -> la_notinstalled, needs install", !o.Ok && o.Needs == "install" && o.Error == "Not installed yet. Press \"Install\"." && f.Started == null);
 
+                // 2026-10-03（公開前の粗探し 1）: BepInEx がゲームと種類違い（64bit の exe + 32bit の winhttp.dll）。画面は「修復」で止まるが、
+                // トレイ・--autolaunch・2 回目の起動は窓を通らずここへ来て、Installed だけを見て素のゲームで部屋を立てていた
+                var archBad = new InstallInfo { Exe = true, Bep = true, Dll = true, GameVer = "2026.9.29" }; archBad.BepArchBad = true;
+                f = new FakeGame { Status = St(false, archBad, "2026.9.29") };
+                o = f.Launcher(paths).Launch(false, _ => { });
+                r.Check("BepInEx の種類違い -> la_bep_arch, needs install, nothing started, no scan", !o.Ok && o.Needs == "install" && o.Error == S.T("en", "la_bep_arch") && f.Started == null && f.Calls.Count == 0, o.Error);
+                r.Check("... said in the log too", f.Log.Contains(S.T("en", "la_bep_arch")));
+                f = new FakeGame { DevMode = true, Status = St(true, archBad, "2026.9.29", "2026.9.29") };
+                o = f.Launcher(paths).Launch(false, _ => { });
+                r.Check("... in developer mode as well (the mod would not load there either)", !o.Ok && o.Needs == "install" && f.Started == null);
+                r.Check("la_bep_arch names 修復 in 3 languages", S.T("ja", "la_bep_arch").Contains("「修復」") && S.T("zh-CN", "la_bep_arch").Contains("“修复”") && S.T("en", "la_bep_arch").Contains("\"Repair\""));
+                r.Check("BepArchMismatch: only repair/bep, never null or the other repairs", GameLauncher.BepArchMismatch(St(false, archBad, "2026.9.29")) && !GameLauncher.BepArchMismatch(null)
+                    && !GameLauncher.BepArchMismatch(St(false, ok, "2026.8.18")) && !GameLauncher.BepArchMismatch(St(false, new InstallInfo { Exe = true }, null)));
+
                 f = new FakeGame { SteamRunning = false, Status = St(false, ok, "2026.8.18") };
                 o = f.Launcher(paths).Launch(false, _ => { });
                 r.Check("Steam not running -> la_steam (no dialog)", !o.Ok && o.Error == "Please start Steam first." && f.Started == null && f.Calls.Count == 0);
@@ -1003,6 +1093,12 @@ namespace Starpocket.Client.SelfTest
                 r.Check("plain Among Us, mod copy not installed: yes (it needs no mod copy)", ClientApp.TrayPlayable(false, false, true, false, notInstalled));
                 r.Check("no status yet: yes", ClientApp.TrayPlayable(false, false, false, false, null) && ClientApp.TrayPlayable(false, false, true, false, null));
                 r.Check("during a task or a game: no, whichever game", !ClientApp.TrayPlayable(true, false, true, false, installed) && !ClientApp.TrayPlayable(false, true, true, false, installed) && !ClientApp.TrayPlayable(false, true, false, false, installed));
+                // 2026-10-03（公開前の粗探し 1）: 種類違いの BepInEx のまま、トレイの「プレイ」で素のゲームを立てない
+                var bepBad = new InstallInfo { Exe = true, Bep = true, Dll = true, GameVer = "2026.9.29" }; bepBad.BepArchBad = true;
+                var archMismatch = St(false, bepBad, "2026.9.29");
+                r.Check("BepInEx の種類違い: no (friend and developer), but plain Among Us still yes",
+                    !ClientApp.TrayPlayable(false, false, false, false, archMismatch) && !ClientApp.TrayPlayable(false, false, false, true, St(true, bepBad, "2026.9.29", "2026.9.29"))
+                    && ClientApp.TrayPlayable(false, false, true, false, archMismatch));
             });
 
             r.Test("the stub", () =>

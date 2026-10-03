@@ -13,6 +13,7 @@
 // 窓もネットも使いません。<work>\modcfg の中でファイルを読み書きするだけです。
 // SPDX-License-Identifier: GPL-3.0-or-later
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Starpocket.Client.Core;
@@ -279,6 +280,99 @@ namespace Starpocket.Client.SelfTest
                 i.ApplyConsentToMod();
                 r.Equal("cfg はそのまま", Sample, File.ReadAllText(i.Paths.CfgPath, Encoding.UTF8));
                 r.Check("印も付かない", string.IsNullOrEmpty(i.State.Str("consentAppliedFor")));
+            });
+
+            // ---- 2026-10-03（公開前の粗探し 3）: Set の false は「同じ値」と「失敗」の両方だった
+            r.Test("書けなかった時は印を付けない（次のインストールや修復でもう一度書く）", () =>
+            {
+                string at = "2026-10-03T09:00:00.0000000+09:00";
+                var i = make("held", consentJson(at, "on", "off"));
+                using (File.Open(i.Paths.CfgPath, FileMode.Open, FileAccess.Read, FileShare.None))   // ほかのプログラムが掴んでいる
+                    i.ApplyConsentToMod();
+                r.Equal("cfg はそのまま", Sample, File.ReadAllText(i.Paths.CfgPath, Encoding.UTF8));
+                r.Check("印は付かない", string.IsNullOrEmpty(i.State.Str("consentAppliedFor")));
+                r.Check("知らせも無い", i.ConsentNotice == null);
+                i.ApplyConsentToMod();   // 次の機会（手放された後）
+                r.Equal("書けるようになったら書く", "true", ModConfigFile.Read(i.Paths.CfgPath, "Translate", "Enabled"));
+                r.Equal("... 今度は印が付く", at, i.State.Str("consentAppliedFor"));
+                r.Check("... と知らせ", i.ConsentNotice != null);
+                r.Check("Apply は 4 値: 同じ値 / 変えた / 作った / 失敗",
+                    ModConfigFile.Apply(i.Paths.CfgPath, "Translate", "Enabled", "true", null) == SetOutcome.Unchanged
+                    && ModConfigFile.Apply(i.Paths.CfgPath, "Translate", "Enabled", "false", null) == SetOutcome.Changed
+                    && ModConfigFile.Apply(null, "Translate", "Enabled", "false", null) == SetOutcome.Failed
+                    && ModConfigFile.Apply(Path.Combine(dir, "no-such-dir", "x", "y.cfg"), "A", "B", "c", null) == SetOutcome.Created   // 無いファイルは作る（崩す係 4: 「変えた」とは別）
+                    && ModConfigFile.Apply(i.Paths.CfgPath, "Translate", "NewKey", "1", null) == SetOutcome.Created      // 節はあるがキーが無い
+                    && ModConfigFile.Apply(i.Paths.CfgPath, "NewSection", "K", "1", null) == SetOutcome.Created);        // 節も無い
+                r.Check("Set は「書いた」時（変えた・作った）だけ true（今までどおり）",
+                    !ModConfigFile.Set(i.Paths.CfgPath, "Translate", "Enabled", "false", null) && ModConfigFile.Set(i.Paths.CfgPath, "Translate", "Enabled", "true", null)
+                    && ModConfigFile.Set(Path.Combine(dir, "no-such-dir2", "y.cfg"), "A", "B", "c", null));
+            });
+
+            // ---- 2026-10-03（崩す係 4）: 初めてのインストールは cfg がまだ無い。作っただけで「変えました…自分で変えていた人は」の札を出さない
+            r.Test("初めてのインストール（cfg が無い）: 書いて印を付けるが、「変えました」の札は出さない", () =>
+            {
+                string at = "2026-10-03T09:30:00.0000000+09:00";
+                var i = make("first", consentJson(at, "on", "off"));
+                File.Delete(i.Paths.CfgPath);   // BepInEx がまだ一度も動いていない: cfg は無い
+                i.ApplyConsentToMod();
+                r.Equal("翻訳は入", "true", ModConfigFile.Read(i.Paths.CfgPath, "Translate", "Enabled"));
+                r.Equal("自動通報は切", "false", ModConfigFile.Read(i.Paths.CfgPath, "AntiCheat", "AutoReport"));
+                r.Equal("印は付く（この答えは済み）", at, i.State.Str("consentAppliedFor"));
+                r.Check("知らせは無い（誰の選択も変えていない）", i.ConsentNotice == null, i.ConsentNotice);
+                // 節はあるがキーが無い（古い MOD の cfg）: 同じく作るだけ
+                var j = make("nokey", consentJson(at, "on", "on"));
+                File.WriteAllText(j.Paths.CfgPath, "[Translate]\r\n\r\n[AntiCheat]\r\nAutoReport = false\r\n", new UTF8Encoding(false));
+                j.ApplyConsentToMod();
+                r.Equal("無かったキーは足した", "true", ModConfigFile.Read(j.Paths.CfgPath, "Translate", "Enabled"));
+                r.Check("あった方は false → true に変えたので、こちらは知らせる", j.ConsentNotice != null);
+                var k = make("nokey2", consentJson(at, "on", "off"));
+                File.WriteAllText(k.Paths.CfgPath, "[Translate]\r\n\r\n[AntiCheat]\r\nAutoReport = false\r\n", new UTF8Encoding(false));
+                k.ApplyConsentToMod();
+                r.Check("足しただけ＋同じ値: 知らせない", k.ConsentNotice == null && k.State.Str("consentAppliedFor") == at, k.ConsentNotice);
+            });
+
+            // ---- 2026-10-03（崩す係 5 の M9）: 知らせを答えに載せる所を空にしても、試験が通っていた
+            r.Test("知らせは作業の答え（TaskOutcome.Data）に載る", () =>
+            {
+                var i = make("carry", consentJson("2026-10-03T09:40:00.0000000+09:00", "on", "off"));
+                i.ApplyConsentToMod();
+                r.Check("前提: 変わったので知らせがある", i.ConsentNotice != null);
+                var good = i.WithConsentNotice(TaskOutcome.Good("done"));
+                r.Equal("成功の答えに載る", i.ConsentNotice, Installer.ConsentNoticeOf(good));
+                var bad = i.WithConsentNotice(TaskOutcome.Bad("partly"));
+                r.Equal("失敗の答えにも載る（MOD の手順は済んでいる事がある）", i.ConsentNotice, Installer.ConsentNoticeOf(bad));
+                var withData = i.WithConsentNotice(TaskOutcome.Good("done", new Dictionary<string, object> { ["updated"] = true }));
+                r.Check("もとの Data は残る", withData.Data["updated"] is bool u && u && Installer.ConsentNoticeOf(withData) == i.ConsentNotice);
+                r.Check("null の答えはそのまま", i.WithConsentNotice(null) == null);
+                var quiet = make("carry-quiet", consentJson("2026-10-03T09:40:00.0000000+09:00", "off", "on"));   // Sample と同じ値: 知らせ無し
+                quiet.ApplyConsentToMod();
+                var plain = quiet.WithConsentNotice(TaskOutcome.Good("done"));
+                r.Check("知らせが無ければ何も載せない（Data は null のまま）", quiet.ConsentNotice == null && plain.Data == null);
+            });
+
+            r.Test("同じ値だった時は印だけ付け、「変えました」とは言わない", () =>
+            {
+                // Sample は [Translate] Enabled = false・[AntiCheat] AutoReport = true。答えが（切, 入）なら何も変わらない
+                string at = "2026-10-03T09:10:00.0000000+09:00";
+                var i = make("same", consentJson(at, "off", "on"));
+                i.ApplyConsentToMod();
+                r.Equal("cfg はそのまま", Sample, File.ReadAllText(i.Paths.CfgPath, Encoding.UTF8));
+                r.Equal("印は付く（この答えは済み）", at, i.State.Str("consentAppliedFor"));
+                r.Check("知らせは無い", i.ConsentNotice == null);
+            });
+
+            r.Test("本当に変わった時は、画面の札の文が答えに載る", () =>
+            {
+                var i = make("changed", consentJson("2026-10-03T09:20:00.0000000+09:00", "on", "off"));
+                i.ApplyConsentToMod();
+                r.Equal("ja の文（翻訳 入・自動通報 切）", S.T("ja", "in_consent_changed", "入", "切"), i.ConsentNotice);
+                r.Check("in_consent_changed は 3 言語で、答えの 2 つを載せる",
+                    S.T("ja", "in_consent_changed", "入", "切").Contains("チャット翻訳 入") && S.T("zh-CN", "in_consent_changed", "开", "关").Contains("聊天翻译 开")
+                    && S.T("en", "in_consent_changed", "on", "off").Contains("chat translation on") && S.T("en", "in_consent_changed", "on", "off").Contains("auto report off"));
+                var plain = TaskOutcome.Good("done");
+                r.Check("答えに載っていなければ null", Installer.ConsentNoticeOf(plain) == null && Installer.ConsentNoticeOf(null) == null);
+                var withNotice = TaskOutcome.Good("done", new Dictionary<string, object> { [Installer.ConsentNoticeKey] = i.ConsentNotice });
+                r.Equal("答えから読める（ClientApp の札と --action の 1 行が読む所）", i.ConsentNotice, Installer.ConsentNoticeOf(withNotice));
             });
         }
     }

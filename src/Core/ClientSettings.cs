@@ -12,12 +12,19 @@
 // 0 でない間だけ書く（ページの profile.set が持ってくる。自分の画像そのものは settings.json ではなく profile\avatar.png）。
 // cleanupArmed (v1.1.2, 直し 1) は、この PC で初めてアプリを開いた時に書く true だけ（それまでは起動の片づけをしない。
 // src\Core\FirstCleanup.cs）。ページからは変えられない（Bridge.SettingKeys に無い）。
+// movingTo (v1.1.2, 2026-10-03 粗探し 5) は、コピーを別のドライブへ写している間だけ書く新しい場所。次の起動が作りかけを片付ける。
+// 2026-10-03（粗探し 2）: ファイルはあるのに読めなかった時は Unreadable を立て、その起動では一度も書かない（Save が投げる）。
+// 2026-10-03（崩す係 1）: 「一瞬掴まれていた」と「中身が壊れている」を分ける。掴まれていた時は短く読み直し（3 回・150 ms おき）、それでも
+//   だめなら Unreadable。中身が JSON でない（0 バイト・NUL 埋め・配列・4 MB 超）時は settings.json.broken-<日時> に名前を変えて残し、既定値で
+//   続ける（書ける）。それまでは壊れたファイルが何度開き直しても Unreadable のままで、設定の保存も 30 日の削除もずっと始まらなかった。
 // Keys this version does not know are kept as they are (a later version's settings survive a downgrade).
 // SPDX-License-Identifier: GPL-3.0-or-later
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Threading;
 
 namespace Starpocket.Client.Core
 {
@@ -220,15 +227,77 @@ namespace Starpocket.Client.Core
             return true;
         }
 
-        /// <summary>Missing, unreadable or malformed file: the defaults.</summary>
-        public static ClientSettings Load(string path)
+        /// <summary>
+        /// 2026-10-03（公開前の粗探し 2）: ファイルは**あるのに**読めなかった（起動の瞬間にウイルス対策や OneDrive が掴んでいた・
+        /// 書きかけ）。LauncherStateFile.Unreadable と同じ考え。この印がある間は <see cref="Save"/> が投げ、
+        /// FirstCleanup.Decide も書かない（ClientApp.SaveSettings は set_unreadable の文で断る。コピーを書き換える作業は in_unreadable で断る）。
+        /// 無いと: 既定値の入ったこの物を、起動直後の自動の保存（cleanupArmed・トレイの知らせの印）がそのまま書き戻し、
+        /// copyDir・devSource・プロフィールが消えていた。コピーの場所が既定（デスクトップ）に戻って「未インストール」になり、
+        /// そこで「インストール」を押すとデスクトップに 2 つ目の約 1 GB ができる。
+        /// ファイルが無い時（初めての PC）は false: 書いてよい。中身が壊れている時（JSON でない）も false: 壊れた物は
+        /// <see cref="BrokenMovedTo"/> へ名前を変えて残し、既定値で続ける（崩す係 1。読めない状態から二度と抜けないのを塞ぐ）。
+        /// 名前を変える事もできなかった（掴まれている）時だけ true。
+        /// </summary>
+        public bool Unreadable { get; private set; }
+
+        /// <summary>2026-10-03（崩す係 1）: 中身が壊れていた settings.json を名前を変えて残した場所（settings.json.broken-yyyyMMdd-HHmmss）。
+        /// 無ければ null。ClientContext が client.log に書く。中身は消していないので、必要なら人が開いて copyDir などを読める。</summary>
+        public string BrokenMovedTo { get; private set; }
+
+        /// <summary>掴まれていた時に読み直す回数と間隔（崩す係 1）。ウイルス対策・OneDrive・バックアップが掴むのは一瞬なので、合わせて 300 ms 待つ。</summary>
+        internal const int ReadRetries = 3, ReadRetryDelayMs = 150;
+
+        /// <summary>
+        /// 2026-10-03（粗探し 5）: 「場所を変える」で別のドライブへ写している最中の、新しい場所（…\Among Us PocketRoles）。
+        /// 写す前に書き、設定を書き換える時（SetCopyDir の後の Save）か、失敗して戻した時に空にする。
+        /// 写している間に終了・落ちる・電源が切れると、目印（CopyPlace.MarkerName）付きの作りかけ（最大約 1 GB。プレイヤー名の
+        /// 入ったログも含む）が残り、同じ場所をもう一度選ぶまで誰も消さなかった。次の起動が、この値の場所に目印があれば片付ける
+        /// （CopyMover.FinishStoppedMove）。目印の無いフォルダ（人の物・できあがったコピー）には触らない。
+        /// 空でない間だけ書く。ページからは変えられない（Bridge.SettingKeys に無い）。
+        /// </summary>
+        public string MovingTo { get; private set; } = "";
+
+        public void SetMovingTo(string path) => MovingTo = path ?? "";
+
+        /// <summary>Missing file: the defaults. Held by another program (after a few short retries): the defaults and
+        /// <see cref="Unreadable"/>. Not JSON: put aside as <see cref="BrokenMovedTo"/>, then the defaults (writable).
+        /// <paramref name="log"/> gets one line when the file was put aside or could not be read.</summary>
+        public static ClientSettings Load(string path, Action<string> log = null) => Load(path, log, ReadRetries, ReadRetryDelayMs, null);
+
+        /// <summary>The same with the retry and the clock in hand (the self-test shortens the wait and fixes the stamp).</summary>
+        internal static ClientSettings Load(string path, Action<string> log, int retries, int delayMs, Func<DateTime> now)
         {
+            log = log ?? (_ => { });
             var s = new ClientSettings();
+            bool there = false;
             try
             {
-                if (!File.Exists(path)) return s;
-                var obj = Json.TryParseObject(Json.ReadUtf8File(path));
-                if (obj == null) return s;
+                there = File.Exists(path);
+                if (!there) return s;
+                // 2026-10-03（崩す係 1）: 4 MB より大きい物はうちのファイルではない（Json.ReadUtf8File が投げる前に、壊れた物として脇へ）
+                if (new FileInfo(path).Length > Json.MaxFileBytes) return PutAside(path, "larger than " + (Json.MaxFileBytes / (1024 * 1024)) + " MB", log, now);
+                // 掴まれていた（共有違反・権限）なら短く読み直す。読めないままなら Unreadable（書かない側に倒す）
+                string text = null;
+                Exception last = null;
+                for (int attempt = 1; ; attempt++)
+                {
+                    try { text = Json.ReadUtf8File(path); break; }
+                    catch (Exception ex)
+                    {
+                        last = ex;
+                        if (attempt >= Math.Max(1, retries)) break;
+                        if (delayMs > 0) Thread.Sleep(delayMs);
+                    }
+                }
+                if (text == null)
+                {
+                    log("settings.json: could not be read (" + (last != null ? last.Message : "?") + ") after " + Math.Max(1, retries) + " tries; nothing is written over it this start");
+                    return new ClientSettings { Unreadable = true };
+                }
+                var obj = Json.TryParseObject(text);
+                // 中身が JSON の物（object）でない: 停電の後の 0 バイト・NUL 埋め、人が書き換えた配列など。開き直しても直らないので、名前を変えて残し、
+                // 既定値で続ける（次の保存が新しいファイルを書く）。それまでは Unreadable のままで、設定の保存も 30 日の削除も二度と始まらなかった
+                if (obj == null) return PutAside(path, "not readable as JSON", log, now);
                 foreach (var kv in obj)
                 {
                     if (kv.Key == "close") { var v = kv.Value as string; if (IsValidClose(v)) s.Close = v; }
@@ -246,18 +315,49 @@ namespace Starpocket.Client.Core
                     // remembered answer, never a permission on its own
                     else if (kv.Key == "devSource") { var v = kv.Value as string; if (v != null) s.DevSourcePath = v; }
                     else if (kv.Key == "copyDir") { var v = kv.Value as string; if (v != null) s.CopyDir = v; }   // 2026-10-01: string のみ
+                    else if (kv.Key == "movingTo") { var v = kv.Value as string; if (v != null) s.MovingTo = v; }   // 2026-10-03（粗探し 5）: string のみ
                     else if (kv.Key == "profileName") { var v = kv.Value as string; if (v != null) s.ProfileName = CleanProfileName(v); }   // v1.3: string のみ
                     else if (kv.Key == "profileAvatar") { int v; if (TryVolume(kv.Value, out v) && v >= 0 && v < AvatarCount) s.ProfileAvatar = v; }   // v1.3: 0〜5 のみ
                     else s.other[kv.Key] = kv.Value;
                 }
             }
-            catch (Exception) { }
+            catch (Exception ex)
+            {
+                // 読めなかっただけで、ファイルはある: 既定値で上書きしてはいけない印（粗探し 2）。読めた分の値は捨てる（半分だけの状態を作らない）
+                if (there)
+                {
+                    log("settings.json: could not be read (" + ex.Message + "); nothing is written over it this start");
+                    return new ClientSettings { Unreadable = true };
+                }
+            }
             return s;
         }
 
-        /// <summary>Writes through a temp file, then replaces (a crash never leaves half a file). Throws on failure.</summary>
+        /// <summary>2026-10-03（崩す係 1）: 壊れた settings.json を settings.json.broken-yyyyMMdd-HHmmss に名前を変えて残し、既定値を返す
+        /// （<see cref="BrokenMovedTo"/> にその場所）。名前を変えられなかった（掴まれている）時は Unreadable（この起動では書かない。次の起動がまた試す）。</summary>
+        static ClientSettings PutAside(string path, string why, Action<string> log, Func<DateTime> now)
+        {
+            string stamp = (now ?? (() => DateTime.Now))().ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+            string aside = path + ".broken-" + stamp;
+            try
+            {
+                for (int i = 2; File.Exists(aside); i++) aside = path + ".broken-" + stamp + "-" + i;
+                File.Move(path, aside);
+            }
+            catch (Exception ex)
+            {
+                log("settings.json: " + why + ", and it could not be put aside (" + ex.Message + "); nothing is written over it this start");
+                return new ClientSettings { Unreadable = true };
+            }
+            log("settings.json: " + why + "; put aside as " + Path.GetFileName(aside) + " and the defaults are used (the next save writes a fresh file)");
+            return new ClientSettings { BrokenMovedTo = aside };
+        }
+
+        /// <summary>Writes through a temp file, then replaces (a crash never leaves half a file). Throws on failure -
+        /// and always while <see cref="Unreadable"/> (粗探し 2: writing now would put the defaults over a file that is there).</summary>
         public void Save(string path)
         {
+            if (Unreadable) throw new IOException("settings.json is there but could not be read this time; not written over (open the app again)");
             var obj = new Dictionary<string, object>(StringComparer.Ordinal) { ["close"] = Close, ["lang"] = Lang };
             if (TrayHintShown) obj["trayHintShown"] = true;
             if (CleanupArmed) obj["cleanupArmed"] = true;   // v1.1.2 直し 1
@@ -270,6 +370,7 @@ namespace Starpocket.Client.Core
             if (DevBuild) obj["devBuild"] = true;
             if (DevSourcePath.Length > 0) obj["devSource"] = DevSourcePath;   // v1.4
             if (CopyDir.Length > 0) obj["copyDir"] = CopyDir;   // 2026-10-01
+            if (MovingTo.Length > 0) obj["movingTo"] = MovingTo;   // 2026-10-03（粗探し 5）: 写している間だけ
             if (ProfileName.Length > 0) obj["profileName"] = ProfileName;   // v1.3
             if (ProfileAvatar != 0) obj["profileAvatar"] = ProfileAvatar;
             foreach (var kv in other) obj[kv.Key] = kv.Value;

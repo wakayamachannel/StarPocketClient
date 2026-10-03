@@ -20,6 +20,11 @@ using System.Text;
 
 namespace Starpocket.Client.Core
 {
+    /// <summary><see cref="ModConfigFile.Apply"/> の答え（2026-10-03）。「同じ値だった」と「書けなかった」を分ける。
+    /// 崩す係 4: 「無かったので作った」（Created）も「別の値から変えた」（Changed）と分ける。初めてのインストールでは MOD の cfg がまだ無く、
+    /// 作っただけなのに「変えました」の札が全員に出ていた。知らせは Changed の時だけ。</summary>
+    internal enum SetOutcome { Unchanged, Changed, Created, Failed }
+
     internal static class ModConfigFile
     {
         static readonly UTF8Encoding Utf8NoBom = new UTF8Encoding(false);
@@ -43,15 +48,28 @@ namespace Starpocket.Client.Core
         }
 
         /// <summary>[<paramref name="section"/>] の <paramref name="key"/> を <paramref name="value"/> にする。
-        /// 実際に書き換えた時だけ true。すでに同じ値なら何も書かずに false。</summary>
+        /// 実際に書いた時（変えた・無かったので作った）だけ true。すでに同じ値なら何も書かずに false。**書けなかった時も false**なので、分けたい所は
+        /// <see cref="Apply"/> を使う（2026-10-03 公開前の粗探し 3: Installer.ApplyConsentToMod が、書けなかったのに「書いた」印を付けていた）。</summary>
         public static bool Set(string path, string section, string key, string value, Action<string> log)
+        {
+            var o = Apply(path, section, key, value, log);
+            return o == SetOutcome.Changed || o == SetOutcome.Created;
+        }
+
+        /// <summary>
+        /// <see cref="Set"/> の 4 値の形（2026-10-03）: Changed = 別の値から書き換えた、Created = ファイル・節・キーが無かったので足した
+        /// （崩す係 4。初めてのインストールはこれ）、Unchanged = すでにその値だった（何も書いていない）、
+        /// Failed = 書けなかった（読み取り専用・掴まれている・場所が無い。ログに理由を残す）。投げない。
+        /// </summary>
+        public static SetOutcome Apply(string path, string section, string key, string value, Action<string> log)
         {
             log = log ?? (_ => { });
             string tmp = null;
             try
             {
-                if (string.IsNullOrEmpty(path)) return false;
+                if (string.IsNullOrEmpty(path)) { log("mod config: no path"); return SetOutcome.Failed; }
                 string text = File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : "";
+                var outcome = SetOutcome.Created;
                 // 改行は元のファイルに合わせる。空のファイル（これから作る）だけ Windows の既定（CRLF）にする。
                 // Environment.NewLine を LF のファイルにも使うと、1 行直すだけで全行が CRLF になってしまう。
                 string eol = text.Length == 0 ? Environment.NewLine
@@ -68,10 +86,11 @@ namespace Starpocket.Client.Core
                     {
                         int eq = lines[at].IndexOf('=');
                         string right = lines[at].Substring(eq + 1);
-                        if (right.Trim() == value) return false;               // すでにその値
+                        if (right.Trim() == value) return SetOutcome.Unchanged;   // すでにその値
                         int lead = 0;
                         while (lead < right.Length && (right[lead] == ' ' || right[lead] == '\t')) lead++;
                         lines[at] = lines[at].Substring(0, eq + 1) + right.Substring(0, lead) + value;
+                        outcome = SetOutcome.Changed;   // 別の値から変えた（これだけが「変えました」の知らせになる）
                     }
                     else
                     {
@@ -94,13 +113,13 @@ namespace Starpocket.Client.Core
                 if (File.Exists(path)) File.Replace(tmp, path, null);
                 else File.Move(tmp, path);
                 tmp = null;
-                log("mod config: [" + section + "] " + key + " = " + value);
-                return true;
+                log("mod config: [" + section + "] " + key + " = " + value + (outcome == SetOutcome.Created ? " (added; it was not there)" : ""));
+                return outcome;
             }
             catch (Exception ex)
             {
                 log("mod config: [" + section + "] " + key + ": " + ex.Message);
-                return false;
+                return SetOutcome.Failed;
             }
             finally
             {

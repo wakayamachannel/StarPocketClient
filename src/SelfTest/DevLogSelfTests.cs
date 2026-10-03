@@ -345,6 +345,27 @@ namespace Starpocket.Client.SelfTest
                     FirstCleanup.Decide(ClientSettings.Load(p), () => { throw new InvalidOperationException("must not write"); }, null));
             });
 
+            r.Test("settings.json is there but cannot be read: nothing deleted, nothing written (粗探し 2)", () =>
+            {
+                string d = r.NewDir("firstclean-unreadable");
+                string p = Path.Combine(d, @"StarPocket\Client\settings.json");
+                SelfTestRunner.Touch(p, "{\"close\":\"quit\"}");
+                var log = new List<string>();
+                int saves = 0;
+                ClientSettings s;
+                using (File.Open(p, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) s = ClientSettings.Load(p, null, 1, 0, null);   // held by another program at start
+                r.Check("the file is marked unreadable", s.Unreadable);
+                r.Check("no clean-up this start", !FirstCleanup.Decide(s, () => saves++, log.Add));
+                r.Check("no mark written, no save tried, the file untouched", !s.CleanupArmed && saves == 0 && File.ReadAllText(p) == "{\"close\":\"quit\"}");
+                r.Check("... and client.log says why", log.Any(l => l.Contains("could not be read")), string.Join(" / ", log));
+                // 2026-10-03（崩す係 1）: 中身が壊れている物は脇へ置いて、「初めて」として印を書く（Unreadable のままだと、その PC では 30 日の削除が二度と始まらなかった）
+                File.WriteAllText(p, "not json");
+                var broken = ClientSettings.Load(p);
+                r.Check("a broken file is put aside, not unreadable", !broken.Unreadable && broken.BrokenMovedTo != null && !File.Exists(p));
+                r.Check("so this start is the first: no clean-up, the mark is written into a fresh file", !FirstCleanup.Decide(broken, () => broken.Save(p), null) && File.ReadAllText(p).Contains("\"cleanupArmed\":true"));
+                r.Check("... and the next start cleans up as before", FirstCleanup.Decide(ClientSettings.Load(p), () => { throw new InvalidOperationException("must not write"); }, null));
+            });
+
             r.Test("the mark cannot be written: the next start skips too", () =>
             {
                 var s = new ClientSettings();

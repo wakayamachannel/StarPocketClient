@@ -38,6 +38,8 @@ namespace Starpocket.Client.Core
         public bool Network;             // 割り当てたネットワークドライブ（Z: → \\nas\…）か、種類が分からないドライブ（公開前レビュー 2026-10-01）
         public long? FreeBytes;          // 新しいドライブの空き（読めない時は null）
         public long NeededBytes;         // 今のコピーの大きさ
+        public int OnlineOnlyFiles;      // 2026-10-03（粗探し 7）: 今のコピーの中の、OneDrive の「オンラインのみ」のファイルの数（写す時に全部落ちてくる）
+        public int LongestRelative;      // 2026-10-03（崩す係 11）: 今のコピーの中の一番長いファイルの道（コピーのフォルダからの相対、文字数）。無ければ 0
         public string[] Protected = new string[0];   // Program Files・Windows・このアプリ自身のフォルダ（DataDir・ExeDir・Aegis の記録）
         public string[] OneDrive = new string[0];    // OneDrive のフォルダ
     }
@@ -86,12 +88,23 @@ namespace Starpocket.Client.Core
             string cur = Norm(f.Current);
             if (cur.Length > 0 && Same(t, cur)) return "cp_same";
             if (cur.Length > 0 && Inside(t, cur)) return "cp_inside";
+            // 2026-10-03（公開前の粗探し 6）: 逆向きも見る。このアプリ自身のフォルダ（Protected の中の ExeDir。zip を今のコピーの中に広げた人）
+            // が今のコピーの中にあると、別のドライブへ写した後の DeleteOld が、動いている Client の ui などの掴まれていないファイルを消し、
+            // 次に開いた Client が「exe の隣のファイルが足りない」で動かなくなる（同じドライブなら名前の変更が失敗するだけ）。移す物が
+            // ある時だけ（CurrentExists。無ければ消す物も無い）
+            if (f.CurrentExists && cur.Length > 0 && f.Protected.Any(p => !string.IsNullOrEmpty(p) && Inside(Norm(p), cur))) return "cp_app_inside";
             if (f.Protected.Any(p => !string.IsNullOrEmpty(p) && Inside(t, Norm(p)))) return "cp_protected";
             if (t.IndexOf("\\steamapps\\", StringComparison.OrdinalIgnoreCase) >= 0) return "cp_steam";
+            // 2026-10-03（粗探し 10）: ほかのゲームストアのフォルダ（Epic Games・XboxGames・WindowsApps …）。そのストアがゲームを
+            // アンインストールする時に、コピー（Banlist・ログ）も一緒に消える
+            if (OtherStore(t) != null) return "cp_otherstore";
             if (f.OneDrive.Any(p => !string.IsNullOrEmpty(p) && Inside(t, Norm(p)))) return "cp_onedrive";
             // 中身の入ったフォルダには移さない。ただし「今の場所にはコピーが無く、そこにコピーがある」時だけは、そのコピーを使う
             // （手で移した人・環境変数をやめた人・設定の保存に失敗して元に戻せなかった時。何も上書きしない）
             if (f.TargetExists && !f.TargetEmpty && !f.TargetHasMarker && !(f.TargetIsCopy && !f.CurrentExists)) return "cp_exists";
+            // 2026-10-03（崩す係 11）: 深すぎる場所は、書けるかの試し（cp_write）より先に cp_toolong と言う。入れ物が約 190 文字を超えると、試しに作る
+            // フォルダの名前が先に Windows の上限に当たり、本当の理由と違う「書き込めません」が出ていた。CopyMover.Move も移す直前にもう一度見る
+            if (t.Length + 1 + Math.Max(f.LongestRelative, MarkerName.Length) > FileCopy.MaxPath) return "cp_toolong";
             if (!f.Writable) return "cp_write";
             if (f.CurrentExists && !f.SameVolume && f.FreeBytes.HasValue && f.FreeBytes.Value < f.NeededBytes + SpaceMargin) return "cp_space";
             return null;
@@ -130,9 +143,29 @@ namespace Starpocket.Client.Core
         /// 消えたり置き換わったりするので、その中には置かない（Protected に入れて cp_protected。公開前レビュー 2026-10-01:
         /// 中に置けてしまい、アンインストールが「MOD 用のコピーは残します」と言いながら DataDir ごと消していた）。</summary>
         public static CopyTargetFacts Probe(string target, string current, string currentExe, params string[] appFolders)
+            => Probe(RealDriveType, target, current, currentExe, appFolders);
+
+        /// <summary>ドライブの種類（<see cref="DriveType"/>）の読み方を差し替えられる形。自己点検が、この PC に無い「Z: → \\nas」を作って、
+        /// 書き込みの試しが走らない事を見る（2026-10-03、崩す係 5 の M12: 無いドライブ文字だけでは、種類で断る所を消しても区別できなかった）。</summary>
+        internal static CopyTargetFacts Probe(Func<string, DriveType?> driveTypeOf, string target, string current, string currentExe, params string[] appFolders)
         {
             var f = new CopyTargetFacts { Target = target, Current = current };
             try { f.CurrentExists = !string.IsNullOrEmpty(currentExe) && File.Exists(currentExe); } catch (Exception) { }
+            KnownFolders(f, appFolders);
+            // 2026-10-03（公開前の粗探し 8）: ネットワークの場所は、ディスクに触る前に断る。それまでは Check より先に CanWrite と DriveInfo が
+            // 走り、\\NAS に .starpocket-write-test-* が一瞬できて、切れたドライブでは断るまで長く待たされた。
+            //   - \\ で始まる所: 何も見ずに「ネットワーク」（Check が cp_network）
+            //   - Z: のように文字を割り当てた所: ドライブの種類（GetDriveType。つながなくても返る）だけ見て、Directory.Exists も CanWrite もしない
+            string t = Norm(target);
+            if (t.StartsWith("\\\\", StringComparison.Ordinal)) { f.Network = true; f.TargetExists = true; f.TargetEmpty = false; return f; }
+            string root = null;
+            try { root = Path.GetPathRoot(Path.GetFullPath(target)); } catch (Exception) { }
+            // 公開前レビュー 2026-10-01: Z: → \\nas\share のように文字を割り当てたネットワークドライブは "\\" で始まらないので、
+            // ドライブの種類で見る（IsNetworkLike）。種類を読むこと自体が失敗した時は、ここでは断らない（書けるかは別に確かめている）
+            DriveType? kind = null;
+            try { kind = root != null ? (driveTypeOf ?? RealDriveType)(root) : null; } catch (Exception) { }
+            f.Network = kind.HasValue && IsNetworkLike(kind.Value);
+            if (f.Network) { f.TargetExists = true; f.TargetEmpty = false; return f; }
             try
             {
                 f.TargetExists = Directory.Exists(target);
@@ -148,13 +181,26 @@ namespace Starpocket.Client.Core
             catch (Exception) { f.TargetExists = true; f.TargetEmpty = false; }   // 見られない所には移さない
             f.Writable = CanWrite(GameFolders.Parent(target));
             f.SameVolume = SameRoot(target, current);
-            DriveInfo drive = null;
-            try { drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(target))); } catch (Exception) { }
-            // 公開前レビュー 2026-10-01: Z: → \\nas\share のように文字を割り当てたネットワークドライブは "\\" で始まらないので、
-            // ドライブの種類で見る（IsNetworkLike）。種類を読むこと自体が失敗した時は、ここでは断らない（書けるかは別に確かめている）
-            try { f.Network = drive != null && IsNetworkLike(drive.DriveType); } catch (Exception) { }
-            try { f.FreeBytes = drive != null ? drive.AvailableFreeSpace : (long?)null; } catch (Exception) { f.FreeBytes = null; }
-            if (f.CurrentExists) f.NeededBytes = FolderSize(current);   // 確かめの文に大きさを出すので、同じドライブでも数える
+            try { f.FreeBytes = root != null ? new DriveInfo(root).AvailableFreeSpace : (long?)null; } catch (Exception) { f.FreeBytes = null; }
+            if (f.CurrentExists)
+            {
+                int online, longest;
+                f.NeededBytes = Measure(current, out online, out longest);   // 確かめの文に大きさを出すので、同じドライブでも数える
+                f.OnlineOnlyFiles = online;
+                f.LongestRelative = longest;
+            }
+            return f;
+        }
+
+        /// <summary>この PC のドライブの種類（読めなければ null）。無い文字でも DriveInfo は作れ、種類は NoRootDirectory になる。</summary>
+        static DriveType? RealDriveType(string root)
+        {
+            try { return new DriveInfo(root).DriveType; } catch (Exception) { return null; }
+        }
+
+        /// <summary>Program Files・Windows・このアプリ自身のフォルダ、OneDrive のフォルダ（判断に要る、ディスクに触らない事実）。</summary>
+        static void KnownFolders(CopyTargetFacts f, string[] appFolders)
+        {
             f.Protected = new[]
             {
                 Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
@@ -168,16 +214,81 @@ namespace Starpocket.Client.Core
                 Environment.GetEnvironmentVariable("OneDriveConsumer"),
                 Environment.GetEnvironmentVariable("OneDriveCommercial"),
             };
-            return f;
         }
+
+        /// <summary>
+        /// 2026-10-03（公開前の粗探し 10）: ほかのゲームストアが自分のゲームを置くフォルダの名前。道のどこかに**丸ごと 1 段**として
+        /// あれば、そのストアの名前を返す（"D:\Epic Games\AmongUs\…" → Epic Games。"D:\My Epic Games Stuff\…" は違う）。無ければ null。
+        /// Steam（steamapps）は前から別に断っている（cp_steam）。
+        /// </summary>
+        public static string OtherStore(string path)
+        {
+            string p = Norm(path);
+            if (p.Length == 0) return null;
+            foreach (var seg in p.Split('\\'))
+                foreach (var name in OtherStoreFolders)
+                    if (string.Equals(seg, name, StringComparison.OrdinalIgnoreCase)) return name;
+            return null;
+        }
+
+        /// <summary>Epic Games Launcher（既定 …\Epic Games\、別のドライブでも同じ名前）、Xbox / PC Game Pass（C:\XboxGames\）、
+        /// Microsoft Store（WindowsApps・ModifiableWindowsApps）、GOG GALAXY、EA app / Origin、Ubisoft Connect、Battle.net。</summary>
+        internal static readonly string[] OtherStoreFolders =
+        {
+            "Epic Games", "XboxGames", "WindowsApps", "ModifiableWindowsApps", "GOG Galaxy", "GOG Games",
+            "EA Games", "Origin Games", "Ubisoft Game Launcher", "Battle.net",
+        };
 
         /// <summary>フォルダの中身の合計（読めないファイルは数えない）。</summary>
         public static long FolderSize(string dir)
         {
+            int online, longest;
+            return Measure(dir, out online, out longest);
+        }
+
+        /// <summary>フォルダの中身の合計と、OneDrive の「オンラインのみ」のファイルの数（粗探し 7）。読めないファイルは数えない。</summary>
+        public static long Measure(string dir, out int onlineOnly)
+        {
+            int longest;
+            return Measure(dir, out onlineOnly, out longest);
+        }
+
+        /// <summary>同じく、一番長いファイルの道（<paramref name="dir"/> からの相対の文字数。崩す係 11: 深すぎる場所を cp_write より先に cp_toolong と言うため）。</summary>
+        public static long Measure(string dir, out int onlineOnly, out int longestRelative)
+        {
             long n = 0;
-            try { foreach (var fi in new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories)) { try { n += fi.Length; } catch (Exception) { } } }
+            onlineOnly = 0;
+            longestRelative = 0;
+            try
+            {
+                var di = new DirectoryInfo(dir);
+                int rootLen = di.FullName.TrimEnd('\\').Length + 1;
+                foreach (var fi in di.EnumerateFiles("*", SearchOption.AllDirectories))
+                {
+                    try
+                    {
+                        n += fi.Length;
+                        if (IsOnlineOnly(fi.Attributes)) onlineOnly++;
+                        int rel = fi.FullName.Length - rootLen;
+                        if (rel > longestRelative) longestRelative = rel;
+                    }
+                    catch (Exception) { }
+                }
+            }
             catch (Exception) { }
             return n;
+        }
+
+        /// <summary>
+        /// OneDrive（やほかのクラウドのファイルシステムフィルター）の「オンラインのみ」の印: FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS (0x400000)、
+        /// FILE_ATTRIBUTE_RECALL_ON_OPEN (0x40000)、昔からの FILE_ATTRIBUTE_OFFLINE。.NET Framework の FileAttributes には前の 2 つの名前が
+        /// 無いので、数で見る。中身を読む（File.Copy）と、その場で落ちてくる。
+        /// </summary>
+        public static bool IsOnlineOnly(FileAttributes a)
+        {
+            const int RecallOnDataAccess = 0x400000, RecallOnOpen = 0x40000;
+            int bits = (int)a;
+            return (bits & RecallOnDataAccess) != 0 || (bits & RecallOnOpen) != 0 || (a & FileAttributes.Offline) != 0;
         }
 
         /// <summary>本当に書けるかは、書いてみるのが一番確か（読み取り専用・権限・空き 0 をまとめて見る）。書いた物はすぐ消す。
@@ -189,7 +300,8 @@ namespace Starpocket.Client.Core
         internal static bool CanWrite(string dir)
         {
             if (string.IsNullOrEmpty(dir)) return false;
-            string probeDir = GameFolders.Join(dir, ".starpocket-write-test-" + Guid.NewGuid().ToString("N"));
+            // 2026-10-03（崩す係 11）: 名前は短く（8 文字）。長いと、入れ物が深い時に試しのフォルダの方が先に 259 文字に当たっていた
+            string probeDir = GameFolders.Join(dir, ".starpocket-write-test-" + Guid.NewGuid().ToString("N").Substring(0, 8));
             string probe = GameFolders.Join(probeDir, "x.tmp");
             bool made = false;
             try

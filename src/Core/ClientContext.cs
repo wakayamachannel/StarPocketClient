@@ -73,7 +73,8 @@ namespace Starpocket.Client.Core
             c.DataDir = Path.Combine(localAppData, AppInfo.DataFolderRelative);
             c.Log = log ?? new ClientLog(Path.Combine(c.DataDir, "client.log"));
             c.SettingsPath = Path.Combine(c.DataDir, "settings.json");
-            c.Settings = ClientSettings.Load(c.SettingsPath);
+            // 2026-10-03（崩す係 1）: 読めなかった・壊れていて脇へ置いた、は client.log に 1 行残る（ClientSettings.Load が書く）
+            c.Settings = ClientSettings.Load(c.SettingsPath, c.Log.Write);
             c.AegisStateDir = Path.Combine(localAppData, AppInfo.AegisStateFolderRelative);
 
             string desktopDefault = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);   // [Environment]::GetFolderPath('Desktop')

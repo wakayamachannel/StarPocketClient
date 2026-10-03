@@ -187,6 +187,9 @@ namespace Starpocket.Client.Shell
             // v1.1.2 直し 1: この PC で初めての起動なら、この回は何も消さない（印は settings.json に書き、次の起動から今までどおり）。
             // Aegis の events.log の整理（aegis.Start の中）より先に決める
             cleanupThisRun = FirstCleanup.Decide(ctx.Settings, () => ctx.Settings.Save(ctx.SettingsPath), ctx.Log.Write);
+            // 2026-10-03（公開前の粗探し 5）: 前回「場所を変える」で写している途中に終わった・落ちた時の作りかけ（目印付き）の片付けは
+            // StartupHousekeeping の中（裏の糸・作業の鍵を持って。崩す係 6: 最大約 1 GB の削除を画面の糸でしない）。作りかけの場所（movingTo）は
+            // 今のコピー（Paths.Modded）とは別の所なので、Aegis や見張りが場所を覚える前である必要は無い
             try { aegis.Start(); }
             catch (Exception ex) { ctx.Log.Write("Aegis failed: " + ex); }
             OnAegisChanged();
@@ -291,16 +294,26 @@ namespace Starpocket.Client.Shell
         {
             if (!TryBeginTask("startup")) { AfterStartup(); return; }
             bool cleanUp = cleanupThisRun;
+            var settings = ctx.Settings;
+            Action<string> log = ctx.Log.Write;
             Task.Run(() =>
             {
+                // 2026-10-03（粗探し 5・崩す係 6）: 前回「場所を変える」で写している途中に終わった・落ちた時の作りかけ（目印付き。最大約 1 GB）を、
+                // 作業の鍵を持ったこの裏の糸で消す（画面の糸だと HDD や USB の行き先で窓が「応答なし」になる）。目印の無いフォルダには触らない。
+                // 印（movingTo）を外す保存は、下の画面の糸で
+                bool tidied = CopyMover.TidyStoppedMove(settings, log);
                 var gl = ctx.NewGameLogs();
                 // v0.4: loose logs older than 7 days into one zip per day (dayZips). Room only - no retention number changes.
                 FirstCleanup.Housekeep(gl, cleanUp, true);
-                return gl.ArchiveInfo();
+                return Tuple.Create(tidied, gl.ArchiveInfo());
             }).ContinueWith(t => Post(() =>
             {
                 if (t.IsFaulted) ctx.Log.Write("housekeeping: " + t.Exception.GetBaseException().Message);
-                else SendLogSize(t.Result, true);
+                else
+                {
+                    if (t.Result.Item1) CopyMover.ForgetStoppedMove(settings, () => settings.Save(ctx.SettingsPath), log);
+                    SendLogSize(t.Result.Item2, true);
+                }
                 EndTask();
                 AfterStartup();
             }));
@@ -963,6 +976,11 @@ namespace Starpocket.Client.Shell
         /// できた時のために、見張りもここで付け直す。</summary>
         void DoTask(string id, string cmd, Func<Installer, TaskOutcome> body, bool installs = false)
         {
+            // 2026-10-03（崩す係 2）: 起動時に settings.json が読めなかった回は copyDir も分からず、Paths.Modded は既定（デスクトップ）を指している。
+            // コピーを書き換える作業（インストール・修復・同期・「更新して入れる」）をそのまま通すと、デスクトップに 2 つ目の約 1 GB ができる。
+            // 「更新を確認」だけ（installs == false）は読むだけなので通す
+            bool writesCopy = cmd == "install" || cmd == "syncSteam" || (cmd == "checkUpdate" && installs);
+            if (writesCopy && ctx.Settings.Unreadable) { ctx.Log.Write(cmd + ": refused (settings.json could not be read at start)"); Reply(id, Bridge.Fail(S.T(ctx.Lang, "in_unreadable"))); return; }
             if (!TryBeginTask(cmd)) { Reply(id, Bridge.Busy()); return; }
             steamPicked = false;
             var installer = ctx.NewInstaller(p => Post(() => OnTaskProgress(p)));
@@ -980,7 +998,19 @@ namespace Starpocket.Client.Shell
                 RefreshStatus();
                 AfterFilesTask(cmd, installs);
                 Reply(id, o.ToResult());
+                ShowConsentNotice(o);
             }));
+        }
+
+        /// <summary>2026-10-03（公開前の粗探し 3）: この作業で、最初の同意画面の答えに合わせて MOD の設定（チャット翻訳・自動通報）が
+        /// **本当に変わった**時だけ、アプリの札（AegisToast.ShowNotice、9 秒。窓をしまっている時も出る）で 1 回知らせる。ページの一時の文は
+        /// 3.6 秒で消えるので、そこには載せない。文は Installer が作る（in_consent_changed）。ログには Installer が in_consent を残している。</summary>
+        void ShowConsentNotice(TaskOutcome o)
+        {
+            string text = Installer.ConsentNoticeOf(o);
+            if (text == null || quitting) return;
+            try { AegisToast.ShowNotice(AppInfo.Name, text, ctx.Lang); }
+            catch (Exception ex) { ctx.Log.Write("consent notice: " + ex.Message); }
         }
 
         /// <summary>2026-10-01: MOD のコピーを書き換える作業の後（DoTask / DoDev）。見張りを付け直し、Aegis にもう一度スキャンさせる。</summary>
@@ -1279,6 +1309,9 @@ namespace Starpocket.Client.Shell
                 Reply(id, Bridge.Fail(S.T(ctx.Lang, "game_running")));
                 return;
             }
+            // 2026-10-03（崩す係 2）: settings.json が読めなかった回は、消す「MOD 用のコピー」が本当の場所（copyDir）ではなく既定の場所になる。
+            // コピーも消す時だけ断る（アプリだけのアンインストールは、コピーに触らないので通す）
+            if (modCopy && ctx.Settings.Unreadable) { ctx.Log.Write("uninstall: refused (settings.json could not be read at start, the mod copy's place is unknown)"); Reply(id, Bridge.Fail(S.T(ctx.Lang, "in_unreadable"))); return; }
             if (!TryBeginTask("uninstall")) { Reply(id, Bridge.Busy()); return; }
             var planned = un.Plan(modCopy);
             PendingUninstall = new UninstallRequest { ModCopy = modCopy };
@@ -1511,9 +1544,11 @@ namespace Starpocket.Client.Shell
             }
             if (!DevSource.IsDevFolder(picked))
                 return Bridge.Fail(S.T(ctx.Lang, "dev_pick_bad"));
+            string before = ctx.Settings.DevSourcePath;
             ctx.Settings.SetDevSourcePath(picked);
-            try { ctx.Settings.Save(ctx.SettingsPath); }
-            catch (Exception ex) { ctx.Log.Write("devSource: could not save: " + ex.Message); return Bridge.Fail(ex.Message); }
+            // 2026-10-03（崩す係 11）: ほかの保存と同じ道（SaveSettings）。読めなかった回は set_unreadable の文、書けなければ err の文（英語の例外の文をそのまま出さない）
+            var saved = SaveSettings();
+            if (!(saved["ok"] is bool ok && ok)) { ctx.Settings.SetDevSourcePath(before); ctx.Log.Write("devSource: could not save"); return saved; }
             ctx.Log.Write("devSource: " + picked);
             return Bridge.Ok(new Dictionary<string, object>
             {
@@ -1549,6 +1584,8 @@ namespace Starpocket.Client.Shell
             string refuse = ctx.CopySource == "env" ? S.T(ctx.Lang, "cp_fixed_env", Shown(ctx.Paths.Modded))
                 : ctx.CopySource == "arg" ? S.T(ctx.Lang, "cp_fixed_arg", Shown(ctx.Paths.Modded))
                 : ctx.DevMode ? S.T(ctx.Lang, "cp_dev")
+                // 2026-10-03（崩す係 2・11）: settings.json が読めなかった回は、今の場所（copyDir）が分からず、印も書けない。本当の理由で断る（前は cp_save_failed だった）
+                : ctx.Settings.Unreadable ? S.T(ctx.Lang, "in_unreadable")
                 // 公開前レビュー 2026-10-01: settings.json の copyDir を手で Steam のゲームに向けた時。写した後で元（Steam の本物）を消してしまう
                 : CopyPlace.FromSteam(ctx.Paths.Modded, ctx.SteamDir) ? S.T(ctx.Lang, "cp_from_steam", Shown(ctx.Paths.Modded))
                 : gameRunning || Processes.GameRunning() ? S.T(ctx.Lang, "cp_game")
@@ -1584,6 +1621,10 @@ namespace Starpocket.Client.Shell
                 string question = facts.CurrentExists ? S.T(ctx.Lang, "cp_confirm_move", Shown(from), size, Shown(target))
                     : facts.TargetIsCopy ? S.T(ctx.Lang, "cp_confirm_adopt", Shown(target))
                     : S.T(ctx.Lang, "cp_confirm_set", Shown(target));
+                // 2026-10-03（粗探し 7）: 今のコピーが OneDrive の中で「オンラインのみ」のファイルを含む時（Probe が数える）は、移す前に
+                // 「全部ダウンロードする」と知らせる（写す時に File.Copy が 1 つずつ落とす。時間と通信量がかかる）。断りはしない: OneDrive の
+                // 外へ出すのが、この機能の一番の使い道
+                if (facts.CurrentExists && facts.OnlineOnlyFiles > 0) question += S.T(ctx.Lang, "cp_confirm_online", facts.OnlineOnlyFiles);
                 if (MessageBox.Show(form, question, AppInfo.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
                 {
                     Reply(id, Bridge.Ok(cancelled));
@@ -1603,7 +1644,7 @@ namespace Starpocket.Client.Shell
                         var cleaner = new CopyMover { Log = ctx.Log.Write };
                         if (!await Task.Run(() => cleaner.ClearLeftover(target))) { Reply(id, Bridge.Fail(S.T(ctx.Lang, "cp_locked"))); return; }
                     }
-                    if (!SaveCopyDir(target)) { Reply(id, Bridge.Fail(S.T(ctx.Lang, "cp_save_failed"))); return; }
+                    if (!MoveFlow.Record(ctx.Settings, SaveOk, target, ctx.Log.Write)) { Reply(id, Bridge.Fail(S.T(ctx.Lang, "cp_save_failed"))); return; }
                     done = S.T(ctx.Lang, "cp_set_done", Shown(target));
                 }
                 else
@@ -1624,26 +1665,30 @@ namespace Starpocket.Client.Shell
                         OldInUse = Processes.ModdedGameRunning,
                         Progress = p => Post(() => OnTaskProgress(p)),
                     };
-                    var moved = await Task.Run(() => mover.Move(from, target));
+                    // 2026-10-03（粗探し 5）: 写す前に「移動中」の印（settings.json の movingTo）。途中で終了・落ちる・電源が切れても、次の起動が
+                    // 目印付きの作りかけを片付ける（CopyMover.TidyStoppedMove）。印を書けないなら、後の copyDir も書けないので、何もせずに断る。
+                    // 印 → 移す → 設定 → 元を消す、の順番は MoveFlow.Run に全部ある（崩す係 5。自己点検が同じ物を回す）。移す・戻す・消すは別の糸、
+                    // 設定の保存はこの画面の糸
+                    var flow = await MoveFlow.Run(ctx.Settings, SaveOk, target,
+                        () => Task.Run(() => mover.Move(from, target)),
+                        moved => Task.Run(() => mover.Undo(moved, from, target)),
+                        () => Task.Run(() => mover.DeleteOld(from)),
+                        ctx.Log.Write);
                     taskbar.ClearProgress();
-                    if (!moved.Ok)
+                    if (!flow.Ok)
                     {
-                        Reply(id, Bridge.Fail(moved.ErrorKey == "cp_space"
-                            ? S.T(ctx.Lang, "cp_space", CopyPlace.Size(facts.NeededBytes + CopyPlace.SpaceMargin))
-                            : oldGameStarted && !quitting ? S.T(ctx.Lang, "cp_game")   // 写す途中でゲームが起動された（何も変えていない）
-                            : S.T(ctx.Lang, moved.ErrorKey ?? "cp_failed")));
-                        return;
-                    }
-                    if (!SaveCopyDir(target))
-                    {
-                        bool undone = await Task.Run(() => mover.Undo(moved, from, target));
+                        string key = flow.ErrorKey ?? "cp_failed";
+                        bool moveFailed = flow.Moved != null && !flow.Moved.Ok;
                         // 公開前レビュー（2 回目）: 写した時（別のドライブ）に戻し切れなかったのは「写しを消し切れなかった」だけで、元のコピーと
                         // 設定は前のまま。名前を変えた時（同じドライブ）とは、残っている物も、人がすることも違う（CopyMover.UndoFailedKey）
-                        Reply(id, Bridge.Fail(undone ? S.T(ctx.Lang, "cp_save_failed") : S.T(ctx.Lang, CopyMover.UndoFailedKey(moved.Renamed), Shown(target))));
+                        Reply(id, Bridge.Fail(key == "cp_space"
+                            ? S.T(ctx.Lang, "cp_space", CopyPlace.Size(facts.NeededBytes + CopyPlace.SpaceMargin))
+                            : moveFailed && oldGameStarted && !quitting ? S.T(ctx.Lang, "cp_game")   // 写す途中でゲームが起動された（何も変えていない）
+                            : key == "cp_undo_failed" || key == "cp_undo_failed_copy" ? S.T(ctx.Lang, key, Shown(target))
+                            : S.T(ctx.Lang, key)));
                         return;
                     }
-                    bool clean = moved.Renamed || await Task.Run(() => mover.DeleteOld(from));
-                    done = clean ? S.T(ctx.Lang, "cp_done", Shown(target)) : S.T(ctx.Lang, "cp_done_left", Shown(target), Shown(from));
+                    done = flow.Clean ? S.T(ctx.Lang, "cp_done", Shown(target)) : S.T(ctx.Lang, "cp_done_left", Shown(target), Shown(from));
                 }
                 ctx.Log.Write("move copy: the mod copy is now at " + Shown(target) + "; the app opens again");
                 Reply(id, Bridge.Ok(new Dictionary<string, object> { ["restart"] = true, ["text"] = done }));
@@ -1675,17 +1720,7 @@ namespace Starpocket.Client.Shell
             }
         }
 
-        /// <summary>settings.json の copyDir を書く。書けなければ前の値に戻して false。</summary>
-        bool SaveCopyDir(string dir)
-        {
-            string before = ctx.Settings.CopyDir;
-            ctx.Settings.SetCopyDir(dir);
-            var saved = SaveSettings();
-            if (saved["ok"] is bool ok && ok) return true;
-            ctx.Settings.SetCopyDir(before);
-            ctx.Log.Write("move copy: settings.json could not be saved");
-            return false;
-        }
+        // （copyDir と移動中の印 movingTo の書き外しは MoveFlow.Record / MoveFlow.Mark（src\Core\CopyMover.cs）に出した。2026-10-03 崩す係 5）
 
         /// <summary>The folder in the viewer's file manager (openModFolder does not check that it exists, like the launcher).</summary>
         static Dictionary<string, object> OpenInExplorer(string folder)
@@ -1828,15 +1863,12 @@ namespace Starpocket.Client.Shell
         /// <summary>2026-10-01: 開き直す理由（client.log 用）。開発の切り替えと、MOD 用のコピーの場所の変更の 2 つ。</summary>
         public string RestartWhy { get; private set; } = "developer switch";
 
-        Dictionary<string, object> SaveSettings()
-        {
-            try { ctx.Settings.Save(ctx.SettingsPath); return Bridge.Ok(); }
-            catch (Exception ex)
-            {
-                ctx.Log.Write("settings.json: " + ex.Message);
-                return Bridge.Fail(S.T(ctx.Lang, "err", ex.Message));
-            }
-        }
+        /// <summary>settings.json を書く。2026-10-03（公開前の粗探し 2）: 起動時に読めなかった回は書かずに set_unreadable の文で断る。
+        /// 中身は Bridge.SaveSettings（崩す係 5 の M20: 自己点検が見られる所に出した）。</summary>
+        Dictionary<string, object> SaveSettings() => Bridge.SaveSettings(ctx.Settings, ctx.SettingsPath, ctx.Lang, ctx.Log.Write);
+
+        /// <summary>同じ物の、true / false の形（MoveFlow が受ける）。</summary>
+        bool SaveOk() { var saved = SaveSettings(); return saved["ok"] is bool ok && ok; }
 
         /// <summary>setLang {lang: auto|ja|zh|en}: stored in settings.json (not launcher-state.json), applied everywhere now.</summary>
         Dictionary<string, object> SetLanguage(Dictionary<string, object> args)
@@ -2039,9 +2071,11 @@ namespace Starpocket.Client.Shell
         public bool TrayCanPlay() => TrayPlayable(longTask != null, gameRunning, ctx.Settings.PlaysVanilla, ctx.DevMode, lastStatus);
 
         /// <summary>The tray's "play": not during a task or a game; a friend's mod copy that is not installed has nothing to start,
-        /// but plain Among Us (Settings → 起動するゲーム) needs no mod copy at all.</summary>
+        /// but plain Among Us (Settings → 起動するゲーム) needs no mod copy at all.
+        /// 2026-10-03（公開前の粗探し 1）: BepInEx がゲームと種類違い（GameLauncher.BepArchMismatch）の時も「プレイ」は押せない。
+        /// 窓をしまったまま遊ぶと、MOD の無い素のゲームで部屋を立ててしまっていた（GameLauncher.Launch も同じ条件で止める）。</summary>
         internal static bool TrayPlayable(bool busy, bool gameRunning, bool vanilla, bool devMode, LaunchStatus status) =>
-            !busy && !gameRunning && (vanilla || !(status != null && !devMode && !status.Installed));
+            !busy && !gameRunning && (vanilla || !(status != null && ((!devMode && !status.Installed) || GameLauncher.BepArchMismatch(status))));
 
         protected override void Dispose(bool disposing)
         {

@@ -118,6 +118,10 @@ namespace Starpocket.Client.Core
                 if (GameRunning()) { Log(T("la_running")); return new LaunchOutcome { Error = T("la_running") }; }
                 var st = ComputeStatus();
                 if (!DevMode && !st.Installed) { Log(T("la_notinstalled")); return new LaunchOutcome { Error = T("la_notinstalled"), Needs = "install" }; }
+                // 2026-10-03（公開前の粗探し 1）: BepInEx がゲームと種類違い（32bit / 64bit。InstallInfo.BepArchBad）。画面のプレイは
+                // PState "repair" で止まるが、トレイの「プレイ」・--autolaunch・2 回目の起動は窓を通らずここへ来て、Installed だけを見て
+                // 素のゲームで部屋を立てていた（v1.1.1 で 9/29 以降に更新した人: 64bit の exe と 32bit の winhttp.dll）。開発モードも同じ
+                if (BepArchMismatch(st)) { Log(T("la_bep_arch")); return new LaunchOutcome { Error = T("la_bep_arch"), Needs = "install" }; }
                 // the launcher shows a message box here; the app shows the same words inside the window
                 if (!SteamRunning()) { Log(T("la_steam")); return new LaunchOutcome { Error = T("la_steam") }; }
                 // the launcher asks "update / sync first?" here with a dialog. v0.2 can sync, so the answer names it and the
@@ -162,6 +166,10 @@ namespace Starpocket.Client.Core
                 return new LaunchOutcome { Error = e };
             }
         }
+
+        /// <summary>2026-10-03（粗探し 1）: この状態では MOD が一度も読み込まれないので、どこから頼まれても起動しない（修復が先）。
+        /// <see cref="LaunchStatus.Compute"/> が "repair" / "bep" を立てる条件そのもの。ClientApp.TrayPlayable も同じ問いで断る。</summary>
+        public static bool BepArchMismatch(LaunchStatus st) => st != null && st.PState == "repair" && st.Repair == "bep";
 
         /// <summary>Test-AegisPreLaunch: waits at most 60 s; no answer in time, an Aegis failure or no Aegis never blocks
         /// the game (PORT-MAP 3.6, 9.1 L-1).</summary>

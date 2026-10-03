@@ -31,8 +31,10 @@ namespace Starpocket.Client.Core
         public Func<Action<TaskProgress>, TaskOutcome> Check;
         public Func<ReportResult> Report;
         public Func<LaunchStatus> ComputeStatus;
-        /// <summary>Remove-ExpiredLocalData then Save-GameLog, before every job, as the launcher does (ps1:1918).</summary>
-        public Action Housekeep = () => { };
+        /// <summary>Remove-ExpiredLocalData then Save-GameLog, before every job, as the launcher does (ps1:1918).
+        /// 2026-10-03（崩す係 3）: 引数は「作業の鍵（SPEC 5.1）を持っているか」。settings.json の印の書き（cleanupArmed・movingTo）と
+        /// 前回の移動の作りかけの削除は、鍵を持った時だけ（Program.ActionMarks）。ログの片付けそのものはログ用の別の鍵で守られていて、今までどおり。</summary>
+        public Action<bool> Housekeep = _ => { };
         /// <summary>The header lines the launcher writes before every headless job (ps1:1913-1916).</summary>
         public bool DevMode;
         public string Src = "", ModdedDir = "", SteamDir;
@@ -65,8 +67,17 @@ namespace Starpocket.Client.Core
                     locked = TakeLock(AppInfo.TaskMutexName);
                     if (locked == null) { Say(T("cl_busy")); return 1; }
                 }
+                else
+                {
+                    // 2026-10-03（崩す係 3）: status と report は読むだけなので、鍵が無くても走る。ただし、その前の片付け（settings.json の印の
+                    // 書き・前回の移動の作りかけの削除）は鍵を取れた時だけ。窓のアプリが「場所を変える」で写している最中に status が走ると、
+                    // 写しかけ（目印付き）を消して移動を失敗させ、起動時に読んだ古い設定で movingTo を消していた。鍵は片付けの間だけ持つ
+                    locked = TakeLock(AppInfo.TaskMutexName);
+                    if (locked == null) Log("--action " + action + ": another Client is busy (the task lock is held); the clean-up before the job is skipped, the job itself only reads");
+                }
                 // as when the launcher opens: throw away what is 30 days old, then keep the last game's log
-                Housekeeping();
+                Housekeeping(locked != null);
+                if (!Startup.ActionNeedsLock(action) && locked != null) { locked.Dispose(); locked = null; }   // 読むだけの仕事は、鍵を持ったまま走らない（今までどおり）
                 bool ok;
                 switch (action)
                 {
@@ -91,9 +102,9 @@ namespace Starpocket.Client.Core
             }
         }
 
-        void Housekeeping()
+        void Housekeeping(bool lockHeld)
         {
-            try { Housekeep(); }
+            try { Housekeep(lockHeld); }
             catch (Exception ex) { Log("housekeeping: " + ex.Message); }
         }
 
@@ -103,6 +114,9 @@ namespace Starpocket.Client.Core
             var o = job(ShowProgress);
             if (o == null) { Say(T("err", "?")); return false; }
             if (!string.IsNullOrEmpty(o.Text)) Say(o.Text);
+            // 2026-10-03（粗探し 3）: 同意画面の答えで MOD の設定が本当に変わった時の知らせ（窓の無い --action では、この 1 行がその知らせ）
+            string notice = Installer.ConsentNoticeOf(o);
+            if (notice != null) Say(notice);
             if (!o.Ok && !string.IsNullOrEmpty(o.Error)) Say(o.Error);
             return o.Ok;
         }

@@ -279,15 +279,61 @@ namespace Starpocket.Client
             Src = ctx.Src,
             ModdedDir = ctx.Paths.Modded,
             SteamDir = ctx.SteamDir,
-            Install = p => ctx.NewInstaller(p).Install(""),
+            // 2026-10-03（崩す係 2）: settings.json が読めなかった回は copyDir も分からない（既定のデスクトップを見てしまう）ので、コピーを書き換える
+            // install は断る。check は読むだけ（「入れますか」はいつも「いいえ」）なので今までどおり
+            Install = p => ctx.Settings.Unreadable ? TaskOutcome.Bad(S.T(ctx.Lang, "in_unreadable")) : ctx.NewInstaller(p).Install(""),
             Check = p => ctx.NewInstaller(p).CheckUpdate(false),   // "shall I install it?" is always answered no
             Report = () => ctx.NewReportBuilder().MakeReport(),
             ComputeStatus = () => ctx.ComputeStatus(false),
             // as when the launcher opens: 30 days, then keep the last game's log (no day zips here, as before).
-            // v1.1.2 直し 1: while the app has never been opened on this PC, only the copy - nothing is deleted, and no mark
-            // is written here (src\Core\FirstCleanup.cs: the first start of the app itself writes it)
-            Housekeep = () => FirstCleanup.Housekeep(ctx.NewGameLogs(), ctx.Settings.CleanupArmed, false),
+            // v1.1.2 直し 1: the first run on this PC deletes nothing and only writes the mark (src\Core\FirstCleanup.cs).
+            // 2026-10-03（公開前の粗探し 14）: --action も印を書く。それまでは印を見るだけだったので、窓を一度も開かず --action だけで使う
+            // 人には印が付かず、30 日の削除がずっと始まらなかった（プレイヤー名を 30 日で消す約束）。初めての実行は何も消さない決まりは同じ。
+            // settings.json が読めなかった回は何も消さず書かない（粗探し 2、FirstCleanup.Decide）。前回の移動の作りかけも、ここで片付ける（粗探し 5）。
+            // 2026-10-03（崩す係 3）: 印の書きと作りかけの削除は、作業の鍵を持った時だけ（ActionMarks）
+            Housekeep = lockHeld =>
+            {
+                bool cleanUp = ActionMarks(ctx.Settings, ctx.SettingsPath, ctx.Log.Write, lockHeld);
+                FirstCleanup.Housekeep(ctx.NewGameLogs(), cleanUp, false);
+            },
         };
+
+        /// <summary>
+        /// --action の前の、settings.json の 2 つの印の扱い（2026-10-03、崩す係 3・5）。返す値は「この回は 30 日の削除をしてよいか」。
+        ///   - 作業の鍵を持っている時: 初めての実行なら印（cleanupArmed）を書いて false（何も消さない）、2 回目からは true。前回の「場所を変える」
+        ///     の作りかけ（movingTo の場所の目印付きフォルダ）があれば片付けて印を外す（CopyMover.FinishStoppedMove）。
+        ///   - 鍵を持っていない時（窓のアプリが作業中）: 何も書かず、何も消さず、今の印をそのまま読む（印があれば今までどおりの 30 日の削除。
+        ///     ログの片付けはログ用の鍵で守られている）。写している最中の作りかけを消して移動を失敗させていたのを塞ぐ。
+        /// 書く時は <see cref="SaveMarks"/>（起動時に読んだ設定を丸ごと書き戻さない）。決して投げない（Decide・FinishStoppedMove が受ける）。
+        /// </summary>
+        internal static bool ActionMarks(ClientSettings settings, string settingsPath, Action<string> log, bool lockHeld)
+        {
+            log = log ?? (_ => { });
+            if (settings == null) return false;
+            if (!lockHeld)
+            {
+                log("--action: another Client is busy; the marks in settings.json are left as they are (nothing written, no leftover removed)");
+                return settings.CleanupArmed;
+            }
+            Action save = () => SaveMarks(settings, settingsPath);
+            bool cleanUp = FirstCleanup.Decide(settings, save, log);
+            CopyMover.FinishStoppedMove(settings, save, log);
+            return cleanUp;
+        }
+
+        /// <summary>
+        /// --action が settings.json に書くのは印 2 つ（cleanupArmed・movingTo）だけ。窓のアプリが同時に動いている事があるので、起動時に読んだ
+        /// 古い値を丸ごと書き戻さず、今のファイルを読み直して印だけ写す（窓の側がその間に書いた copyDir・言語などを古い値に戻さない。崩す係 3）。
+        /// 読み直せなければ投げる（Decide は「次の起動もまた飛ばす」、FinishStoppedMove は「印は残す」と受ける）。
+        /// </summary>
+        internal static void SaveMarks(ClientSettings marks, string settingsPath)
+        {
+            var fresh = ClientSettings.Load(settingsPath);
+            if (fresh.Unreadable) throw new IOException("settings.json could not be read again; the marks are not written this time");
+            fresh.CleanupArmed = marks.CleanupArmed;
+            fresh.SetMovingTo(marks.MovingTo);
+            fresh.Save(settingsPath);
+        }
 
         /// <summary>The words could not be understood. It is said on the console the command came from; when there is no
         /// console (a shortcut with a typo in it, double-clicked) a box says it instead, because a person who sees

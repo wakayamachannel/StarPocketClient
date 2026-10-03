@@ -10,7 +10,7 @@
 - Build: `dotnet build -c Release` on Windows with the .NET SDK 8 (details under "ビルド" below). Running the app needs the Microsoft Edge WebView2 runtime.
 - Licence: GPL-3.0-or-later (`LICENSE`, `NOTICE`). Third-party notices and what the app downloads on request are listed in `NOTICE`.
 - This project is not affiliated with or endorsed by Innersloth LLC; the disclaimer and the Among Us Mod Policy link are at the end of this file.
-- The exe is not code-signed yet (`docs\CODE-SIGNING.md`).
+- The exe is not code-signed yet (`docs\CODE-SIGNING.md`). Windows SmartScreen may therefore show "Windows protected your PC" on the first start: click "More info", check that the "App" line names `StarPocket Client.exe` (the publisher is shown as unknown, because the exe is unsigned), then "Run anyway". Before that, compare the zip's SHA-256 with the one in the release notes (`Get-FileHash -Algorithm SHA256 <zip>` in PowerShell, or `certutil -hashfile <zip> SHA256`); the CI run of the release tag prints the exe's SHA-256 in its "SHA-256 of the build" step and ships `SHA256SUMS.txt` next to the exe (see 「署名について」 below).
 
 StarPocket Games のランチャーアプリです（`StarPocket Client.exe`）。今の PowerShell 版（PocketRoles Launcher と Aegis のトレイ）を 1 つのアプリにまとめます。タスクマネージャーには「Windows PowerShell」ではなく「StarPocket Client」と出ます。
 
@@ -22,7 +22,25 @@ StarPocket Games のランチャーアプリです（`StarPocket Client.exe`）�
 - 画面を描く Microsoft Edge WebView2 ランタイム（Microsoft の部品。アプリが起動する `msedgewebview2.exe`）は、Windows の診断データの設定と Microsoft のプライバシーに関する声明に従って、Microsoft と通信することがあります（自分の更新の確認など）。画面（`ui`）そのものはネットから何も読み込みません
 - ライセンス: GPL-3.0-or-later（`LICENSE`・`NOTICE`）
 - 行動規範: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) ／ セキュリティの知らせ方: [`SECURITY.md`](SECURITY.md)
-- コード署名（Windows の署名）は**まだしていません**。説明は [`docs/CODE-SIGNING.md`](docs/CODE-SIGNING.md) です
+- コード署名（Windows の署名）は**まだしていません**。説明は [`docs/CODE-SIGNING.md`](docs/CODE-SIGNING.md) です。初めて開く時の SmartScreen の画面と、受け取った zip が本物かの確かめ方は、下の「署名について」にあります
+
+## 署名について（SmartScreen が出た時・zip の確かめ方）
+
+exe に署名が無いので（無料の署名の申し込みは 2026-10-02 に「まだ広く知られていない」で通りませんでした）、Windows が初めて開く時に **「Windows によって PC が保護されました」**（SmartScreen）を出すことがあります。これはこのアプリに限らず、署名の無いプログラムすべてに出る画面です。
+
+1. その画面の「**詳細情報**」を押します（最初は「実行」のボタンが出ていません）
+2. 「アプリ: `StarPocket Client.exe`」と出ていることを確かめます
+3. 「**実行**」を押します。次からは出ません
+
+押す前に、受け取った zip が公開した物そのままかを確かめられます。配るページ（GitHub Releases）には zip の **SHA-256** を載せます。手元の zip の SHA-256 を出して、同じかを見ます（違えば開かず、zip を取り直してください）:
+
+```
+powershell -NoProfile -Command "Get-FileHash -Algorithm SHA256 '<zip の場所>' | Format-List"
+```
+
+PowerShell を使わないなら、コマンドプロンプトで `certutil -hashfile "<zip の場所>" SHA256` でも同じ値が出ます。
+
+公開のタグのビルド（GitHub Actions の `build`）は、「SHA-256 of the build」の段で exe と隣のファイルの SHA-256 をログに出し、同じ内容を `SHA256SUMS.txt` として exe の隣に置きます（`sha256 *ファイル名` の形。1 行目から順に `Get-FileHash` で見比べられます）。zip を広げた中の `StarPocket Client.exe` の SHA-256 が、その段のログの値と同じなら、exe は CI がソースから建てた物そのままです（`docs\CODE-SIGNING.md` 2.）。
 
 ## v0.1 の中身
 
@@ -39,7 +57,7 @@ StarPocket Games のランチャーアプリです（`StarPocket Client.exe`）�
 | exe の隣のファイルが足りない時（exe だけをコピーした時など）の知らせ | `src\Core\PackageFiles.cs`・`src\Program.cs` |
 | 「mod 付きで起動」（今のランチャーと同じフォルダの決め方・確認・引数） | `src\Core\GameLauncher.cs`・`GameFolders.cs`・`InstallStatus.cs` |
 | v0.1.1: 設定 → PocketRoles の「起動するゲーム」（PocketRoles / ふつうの Among Us（Steam））。ふつうを選ぶと、プレイとトレイの「プレイ」は `steam://rungameid/945360` を開くだけ（MOD なし。起動前スキャン・ログの保存・MOD 用のコピーには触らない）。プレイの字の下に小さくゲームの名前、その下の行に、どちらが起動するかと「変更」。起動のあとは、ゲームが動き出すまで（最長 30 秒）「プレイ中」。選んだものは `settings.json` の `startGame`。設定の「修復」は、下向きの矢印が受け皿に入る絵 | `src\Core\ClientSettings.cs`・`GameLauncher.cs`（`LaunchVanilla`）・`src\Shell\Bridge.cs`・`ui\` |
-| 前回のログの保存と 30 日の削除（今のランチャーと同じ規則・同じ Mutex）。**この PC で初めて開いた時だけは、何も消しません**（ログの保存だけ。events.log の整理も。v1.1.2） | `src\Core\GameLogs.cs`・`src\Core\FirstCleanup.cs` |
+| 前回のログの保存と 30 日の削除（今のランチャーと同じ規則・同じ Mutex）。**この PC で初めて使った時（窓を開いた時も `--action` で動かした時も）だけは、何も消しません**（ログの保存だけ。events.log の整理も。v1.1.2）。設定ファイル（settings.json）が壊れていた時は `settings.json.broken-<日時>` に名前を変えて残し、既定値で続けます | `src\Core\GameLogs.cs`・`src\Core\FirstCleanup.cs`・`src\Core\ClientSettings.cs` |
 | Aegis（PowerShell 版の `Aegis.ps1`（PocketRoles リポジトリの `aegis\Aegis.ps1`）のトレイと起動前スキャンを同じプロセスの中へ）: 起動時のスキャン 13 項目、署名付きの定義ファイル（同梱・キャッシュ・起動時に 1 回の取得と、12 時間たった後に窓を開いた時かプレイの時の取り直し、古い版に戻さない）、ゲーム中のログの見張りと Aegis 独自の通知、events.log の 30 日の整理、起動前スキャン（赤があればプレイを止める） | `src\Aegis\`（`AegisService.cs` が入口。シェルとの境目は `IAegisService.cs`） |
 | 同梱の定義ファイル（MOD のリリースと同じバイト）。**このリポジトリには入れていません**（リリースの添付として配っています。下の「Aegis」） | `aegis\definitions.txt`・`aegis\definitions.txt.sig`（exe の隣に置く） |
 | 同梱の利用規約・プライバシーポリシー・遊び方のルール（3 言語。下書きから印とメモを落とした物で、サイトの文と同じ）。v1.1.2: 清書で残っていた切れ端と作業のメモ（利用規約 第18条2項・第11条4項3号、プライバシーポリシー 3.5・3.9・第6条）を消し、チャット翻訳の説明を本当の事（v0.5.4 以前から上げて設定を変えていない人はオンのまま残る事がある）に直した。版は 1.0 のまま（同意し直しの画面は出ない）。自己テストが、切れ端とメモが無い事を 1 行ずつ見る | `ui\legal\*.md`・`src\SelfTest\ConsentSelfTests.cs` |

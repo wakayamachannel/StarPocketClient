@@ -189,7 +189,7 @@ namespace Starpocket.Client.Core
                     // tell this app AND the PowerShell launcher that a broken copy is up to date.
                     State.Set("lastCheck", LauncherStateFile.Stamp(Now()));
                     Log(T("in_partial", failed));
-                    return TaskOutcome.Bad(T("in_partial", failed));
+                    return WithConsentNotice(TaskOutcome.Bad(T("in_partial", failed)));
                 }
                 // 5 つの手順が全部そろって初めて、前回の中断の記録を消します。
                 // 展開のたびに消していた（finally）のをやめた代わりがここです。途中の手順が失敗した時に
@@ -208,7 +208,7 @@ namespace Starpocket.Client.Core
                 });
                 Log(T("in_done"));
                 Log(T("in_firstrun"));
-                return TaskOutcome.Good(T("in_done"));
+                return WithConsentNotice(TaskOutcome.Good(T("in_done")));
             }
             catch (Exception ex)
             {
@@ -774,13 +774,56 @@ namespace Starpocket.Client.Core
                 if (State != null && State.Str("consentAppliedFor") == c.AgreedAt) return;   // この答えではもう書いた
 
                 bool tr = c.ChatTranslate == "on", ar = c.AutoReport == "on";
-                ModConfigFile.Set(Paths.CfgPath, "Translate", "Enabled", tr ? "true" : "false", Log);
-                ModConfigFile.Set(Paths.CfgPath, "AntiCheat", "AutoReport", ar ? "true" : "false", Log);
+                // 2026-10-03（公開前の粗探し 3）: Set の false は「同じ値だった」と「書けなかった」の両方だったので、4 値の Apply で分ける。
+                //   - 書けなかった（読み取り専用など）: 印（consentAppliedFor）を付けない。付けると二度と書かず、同意の答えが MOD に届かないままになる
+                //   - 別の値から本当に変わった（Changed）: ログだけでなく、画面の札で 1 回知らせる（ConsentNotice → TaskOutcome の consentNotice。
+                //     /opt や設定タブで自分でオンにしていたホストが、更新や修復で黙って戻されていた）
+                //   - 無かったので作った（Created。初めてのインストールは cfg そのものがまだ無い）: 印を付け、ログに書く。知らせない
+                //     （崩す係 4: 自分で変えた物は何も無いのに「変えました…自分で変えていた人は」の札が、初めての人全員に出ていた）
+                //   - 同じ値だった: 印だけ付け、知らせない（何も変わっていないのに「変えました」と言わない）
+                var trOut = ModConfigFile.Apply(Paths.CfgPath, "Translate", "Enabled", tr ? "true" : "false", Log);
+                var arOut = ModConfigFile.Apply(Paths.CfgPath, "AntiCheat", "AutoReport", ar ? "true" : "false", Log);
+                if (trOut == SetOutcome.Failed || arOut == SetOutcome.Failed)
+                {
+                    Log("consent -> mod config: not written completely; it is tried again at the next install or repair");
+                    return;
+                }
                 if (State != null)
                     State.Update(new Dictionary<string, object> { ["consentAppliedFor"] = c.AgreedAt });
-                Log(T("in_consent", T(tr ? "in_consent_on" : "in_consent_off"), T(ar ? "in_consent_on" : "in_consent_off")));
+                string trWord = T(tr ? "in_consent_on" : "in_consent_off"), arWord = T(ar ? "in_consent_on" : "in_consent_off");
+                if (trOut == SetOutcome.Unchanged && arOut == SetOutcome.Unchanged) Log("consent -> mod config: already as answered (nothing changed)");
+                else Log(T("in_consent", trWord, arWord));
+                if (trOut == SetOutcome.Changed || arOut == SetOutcome.Changed) ConsentNotice = T("in_consent_changed", trWord, arWord);
+                else if (trOut == SetOutcome.Created || arOut == SetOutcome.Created) Log("consent -> mod config: added where nothing was written yet (no notice: nobody's own choice was changed)");
             }
             catch (Exception ex) { Log("consent -> mod config: " + ex.Message); }
+        }
+
+        /// <summary>2026-10-03（粗探し 3）: この作業で <see cref="ApplyConsentToMod"/> が MOD の設定を**本当に変えた**時の、画面に出す文
+        /// （in_consent_changed）。変えていなければ null。作業の答え（TaskOutcome.Data の "consentNotice"）に載せ、ClientApp が札で
+        /// 1 回出し、--action はコンソールに 1 行出す（Headless.RunTask）。</summary>
+        internal string ConsentNotice { get; private set; }
+
+        /// <summary>TaskOutcome.Data の "consentNotice" の鍵。</summary>
+        internal const string ConsentNoticeKey = "consentNotice";
+
+        /// <summary><see cref="ConsentNotice"/> を作業の答えに載せる（Ok でも失敗でも。失敗の答えにも MOD の手順は済んでいることがある）。
+        /// internal: 自己点検が、載る事を直に確かめる（崩す係 5 の M9: これを空にしても試験が通っていた）。</summary>
+        internal TaskOutcome WithConsentNotice(TaskOutcome o)
+        {
+            if (o == null || string.IsNullOrEmpty(ConsentNotice)) return o;
+            if (o.Data == null) o.Data = new Dictionary<string, object>();
+            o.Data[ConsentNoticeKey] = ConsentNotice;
+            return o;
+        }
+
+        /// <summary>作業の答えに載った知らせの文、無ければ null（ClientApp.DoTask と Headless.RunTask が読む）。</summary>
+        internal static string ConsentNoticeOf(TaskOutcome o)
+        {
+            object v;
+            if (o == null || o.Data == null || !o.Data.TryGetValue(ConsentNoticeKey, out v)) return null;
+            var s = v as string;
+            return string.IsNullOrEmpty(s) ? null : s;
         }
 
         /// <summary>Save-AegisFingerprint (ps1:818-828): the DLL this app installed is the one Aegis expects.</summary>
@@ -936,7 +979,7 @@ namespace Starpocket.Client.Core
                 string done = T("up_done", GameVersion.DllVersionString(Paths.DllPath));
                 Log(done);
                 Progress(new TaskProgress { Task = "update", Step = 2, Of = 2, Value = 1 });
-                return TaskOutcome.Good(done, new Dictionary<string, object> { ["updated"] = true, ["version"] = rel.Version.ToString() });
+                return WithConsentNotice(TaskOutcome.Good(done, new Dictionary<string, object> { ["updated"] = true, ["version"] = rel.Version.ToString() }));
             }
             catch (Exception ex)
             {

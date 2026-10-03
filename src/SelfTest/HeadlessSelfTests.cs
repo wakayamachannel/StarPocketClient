@@ -573,6 +573,8 @@ namespace Starpocket.Client.SelfTest
             public readonly List<string> Order = new List<string>();
             public readonly List<string> Locks = new List<string>();
             public bool LockFree = true;
+            /// <summary>The mutex this recorder's TakeLock really takes (a name of its own, never the app's): a job can see whether it is still held.</summary>
+            public readonly string LockName = AppInfo.TaskMutexName + ".test." + Guid.NewGuid().ToString("N").Substring(0, 6);
 
             public ConsoleOut Console => ConsoleOut.To(new Writer(Out));
 
@@ -601,8 +603,8 @@ namespace Starpocket.Client.SelfTest
                 Lang = () => lang,
                 ModdedDir = @"C:\fake\Among Us PocketRoles",
                 SteamDir = null,
-                Housekeep = () => rec.Order.Add("housekeep"),
-                TakeLock = name => { rec.Locks.Add(name); return rec.LockFree ? TaskLock.TryTake(name + ".test." + Guid.NewGuid().ToString("N").Substring(0, 6)) : null; },
+                Housekeep = held => rec.Order.Add(held ? "housekeep" : "housekeep-nolock"),
+                TakeLock = name => { rec.Locks.Add(name); return rec.LockFree ? TaskLock.TryTake(rec.LockName) : null; },
                 Install = p => { rec.Order.Add("install"); return TaskOutcome.Good("installed"); },
                 Check = p => { rec.Order.Add("check"); return TaskOutcome.Good("checked"); },
                 Report = () => { rec.Order.Add("report"); return new ReportResult { Ok = true, Name = "PocketRoles-report-20260923-1200.zip", Records = 2 }; },
@@ -613,6 +615,18 @@ namespace Starpocket.Client.SelfTest
         static void ActionTests(SelfTestRunner r)
         {
             r.Section("--action");
+            // 2026-10-03（公開前の粗探し 3）: 同意画面の答えで MOD の設定が本当に変わった時、窓の無い --action ではコンソールの 1 行がその知らせ
+            r.Test("--action install says when the consent answers changed the mod's settings", () =>
+            {
+                var rec = new Recorder();
+                var h = NewHeadless(rec);
+                h.Install = p => TaskOutcome.Good("installed", new Dictionary<string, object> { [Installer.ConsentNoticeKey] = "the notice line" });
+                r.Equal("ends with 0", 0, h.RunAction("install"));
+                r.Check("the notice is printed after the result", rec.Out.Contains("the notice line") && rec.Out.IndexOf("the notice line") > rec.Out.IndexOf("installed"), string.Join(" / ", rec.Out));
+                var quiet = new Recorder();
+                NewHeadless(quiet).RunAction("install");
+                r.Check("without a notice nothing extra is printed", !quiet.Out.Any(l => l.Contains("notice")));
+            });
             r.Test("the four jobs", () =>
             {
                 foreach (var a in Startup.Actions)
@@ -651,13 +665,81 @@ namespace Starpocket.Client.SelfTest
                 r.Equal("check is refused the same way", 1, NewHeadless(new Recorder { LockFree = false }).RunAction("check"));
                 var reading = new Recorder { LockFree = false };
                 r.Equal("status only reads: it runs anyway", 0, NewHeadless(reading).RunAction("status"));
-                r.Equal("and it never asked for the lock", 0, reading.Locks.Count);
+                // 2026-10-03（崩す係 3）: 鍵は頼むが、取れなくても走る。取れなかった時は、前の片付け（settings.json の印・作りかけの削除）だけ飛ばす
+                r.Check("... it asked for the lock once, and without it the clean-up before the job was skipped", reading.Locks.Count == 1 && reading.Order.Contains("housekeep-nolock") && !reading.Order.Contains("housekeep") && reading.Order.Contains("status"), string.Join(",", reading.Order));
                 var rep = new Recorder { LockFree = false };
                 r.Equal("report only reads: it runs anyway", 0, NewHeadless(rep).RunAction("report"));
-                r.Equal("and it never asked for the lock either", 0, rep.Locks.Count);
+                r.Check("... the same for report", rep.Locks.Count == 1 && rep.Order.Contains("housekeep-nolock") && rep.Order.Contains("report"), string.Join(",", rep.Order));
                 var locked = new Recorder();
                 NewHeadless(locked).RunAction("install");
                 r.Check("install asks for THE task lock of SPEC 5.1", locked.Locks.Contains(AppInfo.TaskMutexName));
+                r.Check("... and cleans up with it held", locked.Order.Contains("housekeep") && !locked.Order.Contains("housekeep-nolock"));
+            });
+            r.Test("the lock is held through install and check, but only for the clean-up before status and report (崩す係 3)", () =>
+            {
+                var rec = new Recorder();
+                var h = NewHeadless(rec);
+                Func<bool> free = () => OnAnotherThread(() => { using (var t = TaskLock.TryTake(rec.LockName)) return t != null; });
+                bool? duringStatus = null, duringReport = null, duringInstall = null, duringCheck = null, duringHousekeep = null;
+                h.Housekeep = held => { rec.Order.Add(held ? "housekeep" : "housekeep-nolock"); duringHousekeep = free(); };
+                h.ComputeStatus = () => { duringStatus = free(); return LaunchStatus.Compute(false, new InstallInfo(), null, null, false, false, false); };
+                h.Report = () => { duringReport = free(); return new ReportResult { Ok = true, Name = "x.zip" }; };
+                h.Install = p => { duringInstall = free(); return TaskOutcome.Good("installed"); };
+                h.Check = p => { duringCheck = free(); return TaskOutcome.Good("checked"); };
+                h.RunAction("status");
+                r.Check("status: held during the clean-up, let go before the job", duringHousekeep == false && duringStatus == true, duringHousekeep + "/" + duringStatus);
+                h.RunAction("report");
+                r.Check("report: the same", duringReport == true);
+                h.RunAction("install");
+                r.Check("install: held through the job", duringInstall == false);
+                h.RunAction("check");
+                r.Check("check: held through the job", duringCheck == false);
+                r.Check("afterwards it is free", free());
+            });
+            r.Test("--action writes the two marks only with the task lock, and only the marks (崩す係 3・粗探し 14)", () =>
+            {
+                string d = r.NewDir("action-marks");
+                string p = Path.Combine(d, "settings.json");
+                var log = new List<string>();
+                // 1. a fresh PC, the lock held: the first run deletes nothing and writes the mark; the second cleans up
+                r.Check("first run: no clean-up, the mark written", !Program.ActionMarks(ClientSettings.Load(p), p, log.Add, true) && File.Exists(p) && File.ReadAllText(p).Contains("\"cleanupArmed\":true"), File.Exists(p) ? File.ReadAllText(p) : "no file");
+                r.Check("second run: cleans up, nothing more written", Program.ActionMarks(ClientSettings.Load(p), p, log.Add, true));
+                // 2. the lock is not free (the window is busy): nothing is written, the mark is only read
+                File.WriteAllText(p, "{\"close\":\"quit\",\"lang\":\"en\"}");
+                log.Clear();
+                r.Check("no lock, no mark: no clean-up, nothing written, client.log says why", !Program.ActionMarks(ClientSettings.Load(p), p, log.Add, false) && !File.ReadAllText(p).Contains("cleanupArmed") && log.Any(l => l.Contains("busy")), string.Join(" / ", log));
+                File.WriteAllText(p, "{\"close\":\"quit\",\"cleanupArmed\":true}");
+                r.Check("no lock, the mark there: cleans up as before (the log folder has a lock of its own)", Program.ActionMarks(ClientSettings.Load(p), p, null, false));
+                // 3. what a stopped move left: removed with the lock, left alone without (the window may be copying into it right now)
+                string left = Path.Combine(d, @"D\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(left, CopyPlace.MarkerName));
+                SelfTestRunner.Touch(Path.Combine(left, "half.bin"));
+                File.WriteAllText(p, "{\"close\":\"quit\",\"cleanupArmed\":true,\"movingTo\":" + Json.Serialize(left) + "}");
+                Program.ActionMarks(ClientSettings.Load(p), p, null, false);
+                r.Check("without the lock the half-made copy is left alone and the mark stays", Directory.Exists(left) && ClientSettings.Load(p).MovingTo == left);
+                Program.ActionMarks(ClientSettings.Load(p), p, null, true);
+                r.Check("with the lock it is removed and the mark cleared", !Directory.Exists(left) && ClientSettings.Load(p).MovingTo == "");
+                // 4. only the marks are written: what the window saved meanwhile stays
+                File.WriteAllText(p, "{\"close\":\"quit\",\"lang\":\"en\"}");
+                var old = ClientSettings.Load(p);
+                File.WriteAllText(p, "{\"close\":\"quit\",\"lang\":\"zh-CN\",\"copyDir\":\"D:\\\\New\\\\Among Us PocketRoles\"}");   // the window saved meanwhile
+                Program.ActionMarks(old, p, null, true);
+                var now = ClientSettings.Load(p);
+                r.Check("the mark is written; the window's newer copyDir and language are kept", now.CleanupArmed && now.CopyDir == @"D:\New\Among Us PocketRoles" && now.Lang == "zh-CN", File.ReadAllText(p));
+                // 5. unreadable at start: nothing
+                File.WriteAllText(p, "{\"close\":\"quit\"}");
+                using (File.Open(p, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    var held = ClientSettings.Load(p, null, 1, 0, null);
+                    r.Check("held at start: no clean-up, nothing written, never throws", held.Unreadable && !Program.ActionMarks(held, p, null, true));
+                }
+                r.Check("... the file is as it was", File.ReadAllText(p) == "{\"close\":\"quit\"}");
+                r.Check("no settings: never throws", !Program.ActionMarks(null, p, null, true));
+                // SaveMarks on its own: a file that cannot be re-read at the moment of writing
+                var marks = new ClientSettings { CleanupArmed = true };
+                bool threw = false;
+                using (File.Open(p, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { try { Program.SaveMarks(marks, p); } catch (IOException) { threw = true; } }
+                r.Check("SaveMarks: cannot re-read -> throws (Decide then skips the next start too), the file untouched", threw && File.ReadAllText(p) == "{\"close\":\"quit\"}");
             });
             r.Test("an action nobody knows, handed straight to the runner", () =>
             {

@@ -147,8 +147,22 @@ namespace Starpocket.Client.Aegis
             } });
             list.Add(new AegisCheck { Key = "bep", Run = c =>
             {
-                bool ok = File.Exists(Path.Combine(bep, "core", "BepInEx.Core.dll")) && File.Exists(Path.Combine(gameDir, "winhttp.dll"));
-                c.Detail = AegisTextRef.Of(ok ? "bep.ok" : "bep.none"); return ok;
+                string doorstop = Path.Combine(gameDir, "winhttp.dll");
+                if (!File.Exists(Path.Combine(bep, "core", "BepInEx.Core.dll")) || !File.Exists(doorstop))
+                { c.Detail = AegisTextRef.Of("bep.none"); return false; }
+                // 2026-10-01: 「在る」だけでは足りません。2026.9.29 でゲームが 64bit になったので、
+                // 32bit の winhttp.dll が残っている人は、ファイルは全部そろっているのに MOD が
+                // **一度も読み込まれません**（エラーも出ません）。ここを見ないと、その人の画面は
+                // 「BepInEx 6（IL2CPP）を確認」と緑のままです。公開前レビューで見つかりました。
+                string exe = Path.Combine(gameDir, "Among Us.exe");
+                if (!Starpocket.Client.Core.PeArch.Matches(exe, doorstop))
+                {
+                    c.Detail = AegisTextRef.Of("bep.arch",
+                        Starpocket.Client.Core.PeArch.Name(Starpocket.Client.Core.PeArch.Machine(exe)),
+                        Starpocket.Client.Core.PeArch.Name(Starpocket.Client.Core.PeArch.Machine(doorstop)));
+                    return false;
+                }
+                c.Detail = AegisTextRef.Of("bep.ok"); return true;
             } });
             list.Add(new AegisCheck { Key = "mod", SeriousOnFail = true, Run = c => ModIntegrity(c, Path.Combine(bep, "plugins", "PocketRoles.dll"), stateDir) });
             list.Add(new AegisCheck { Key = "plug", SeriousOnFail = true, Run = c =>

@@ -223,6 +223,169 @@ window.__spChecks = async function(group, mode){
     }
   }
 
+  /* ================= 2026-10-01（持ち主「クライアント起動していきなり MOD のところ開く必要ある？ホームが標準じゃダメ？」） =================
+     起動したらホーム。run.ps1 がスプラッシュの終わった瞬間の画面を、何かが動かす前に書き留めている（window.__start）。
+     9 回のうち 1 回目は何も保存されていない起動（初めて・未インストール）、2 回目からは run.ps1 が前の回の終わりに入れた
+     「最新」（sp.sample）での起動で、これが前は MOD の画面で開いていた場合（名前の後ろの「保存されていた状態」で分かる）。ホームの中身（版に縛られない紹介、本物の履歴、押せるのはパッチノートがある物だけ）も見る。 */
+  {
+    const s = window.__start || null;
+    const visibleViews = () => [...document.querySelectorAll('.view')].filter(v => !v.hidden).map(v => v.id).join(',');
+    add('起動時はホーム（保存されていた状態: ' + (s ? s.stored : '?') + '）', !!s && s.view === 'view-home', s ? s.view : 'run.ps1 did not write window.__start');
+    add('起動時: レールで「今のページ」なのはホームのボタンだけ', !!s && s.rail === 'home', s ? s.rail : '-');
+    add('起動時: 見本の状態を「最新」に変えても（spReview.sample も起動と同じ）ホームのまま', !!s && s.afterSample === 'view-home', s ? s.afterSample : '-');
+
+    H.closeAll(); H.show('home');
+    await tick();
+    const home = $('#view-home'), card = $('#view-home .feature-copy'), st = $('#homeState');
+    add('ホーム: 表示に切り替えられる', visibleViews() === 'view-home', visibleViews());
+    /* the big card: what PocketRoles is, in this language, tied to no version and never 「準備中」 */
+    const cardText = card ? [...card.childNodes].map(n => n.textContent).join(' ') : '';
+    const cardOwn = card ? cardText.replace(st ? st.textContent : '', '') : '';
+    add('ホームの大きな札: 題と説明はこの言語の紹介文', !!card && card.querySelector('h3').textContent === H.t('home.title')
+      && card.querySelector('p').textContent === H.t('home.body') && H.t('home.body').length > 10, card ? card.querySelector('h3').textContent : 'no card');
+    add('ホームの大きな札: 版の番号も「準備中」も書いていない（版に縛られない）', !!card && !/v?\d+\.\d+\.\d+/.test(cardOwn) && !cardOwn.includes(H.t('news.prep')), cardOwn);
+    add('ホームの大きな札: ボタンは「PocketRoles へ」と「パッチノート」（タブと同じ語）',
+      !!card && !!card.querySelector('[data-view="game"]') && card.querySelector('[data-view="game"]').textContent.trim() === H.t('home.open')
+      && !!card.querySelector('[data-goto-notes]') && card.querySelector('[data-goto-notes]').textContent.trim() === H.t('tab.notes'),
+      card ? [...card.querySelectorAll('button')].map(b => b.textContent.trim()).join(' / ') : '');
+    /* in the app the line after the name is the "status" event's; none has come yet, so there is nothing there */
+    add('ホームの大きな札: アプリから status が来る前は、状態の行は空で隠れている（見本を出さない）', !!st && st.hidden && st.textContent === '',
+      st ? (st.hidden + ' / ' + st.textContent) : 'no #homeState');
+
+    /* the news: the real history, newest first. The top row is v0.5.6 (MOD v0.5.6 and Client v1.1.2 go out the same day,
+       the owner 2026-10-01). Its time is ONE line of the page (V056_AT in design\launcher-proto\index.html), written on the
+       day the GitHub release is published; until then the row and the patch notes say 準備中. What is expected here is
+       read from that row, so nothing in this file changes on the day - but a time that is there must be a real UTC time
+       to the second, later than v0.5.5's, and the patch notes must show the very same one. */
+    const rows = [...document.querySelectorAll('#news .news-row')];
+    const verOf = r => (r.querySelector('.ver') || {}).textContent || '';
+    const utcText = iso => { const d = new Date(iso), p = n => String(n).padStart(2, '0');
+      return `${d.getUTCFullYear()}/${p(d.getUTCMonth() + 1)}/${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`; };
+    add('お知らせ: 7 行（v0.5.6〜v0.5.0）', rows.length === 7 && rows.map(verOf).join(',') === 'v0.5.6,v0.5.5,v0.5.4,v0.5.3,v0.5.2,v0.5.1,v0.5.0',
+      rows.map(verOf).join(','));
+    const r056 = rows[0], t056 = r056 ? r056.querySelector('time') : null, out056 = !!t056;
+    const prep = rows.filter(r => r.querySelector('.prep'));
+    if (out056) {
+      const at = t056.getAttribute('datetime');
+      add('お知らせ: v0.5.6 は公開済み（「準備中」の行は無い）', prep.length === 0, prep.map(verOf).join(','));
+      add('お知らせ: v0.5.6 の時刻は秒まである UTC（GitHub の published_at の形）で、v0.5.5 より後、UTC で出る',
+        /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(at) && Date.parse(at) > Date.parse('2026-09-23T10:00:09Z') && t056.textContent === utcText(at), at + ' / ' + t056.textContent);
+    } else {
+      add('お知らせ: v0.5.6 は準備中（公開の日に時刻の 1 行を入れる）。「準備中」はこの 1 行だけで、版の番号は出ている', prep.length === 1 && prep[0] === r056
+        && verOf(r056) === 'v0.5.6' && r056.querySelector('.prep').textContent === H.t('news.prep'), prep.map(verOf).join(','));
+    }
+    const r055 = rows.find(r => verOf(r) === 'v0.5.5');
+    add('お知らせ: v0.5.5 は公開済み（GitHub で公開した時刻 2026-09-23 10:00 UTC）', !!r055 && !r055.querySelector('.prep')
+      && !!r055.querySelector('time') && r055.querySelector('time').getAttribute('datetime') === '2026-09-23T10:00:09Z'
+      && r055.querySelector('time').textContent === '2026/09/23 10:00 UTC', r055 ? r055.textContent : 'no v0.5.5 row');
+    const times = [...document.querySelectorAll('#news time')];
+    add('お知らせ: 時刻は UTC で持って UTC で出す（触れると自分の時刻）', times.length === (out056 ? 7 : 6)
+      && times.every(x => /Z$/.test(x.getAttribute('datetime')) && / UTC$/.test(x.textContent) && !!x.closest('.lt') && !!x.closest('.lt').querySelector('.lt-pop')),
+      times.map(x => x.getAttribute('datetime')).join(','));
+    add('お知らせ: 新しい順', times.every((x, i) => i === 0 || Date.parse(times[i - 1].getAttribute('datetime')) > Date.parse(x.getAttribute('datetime'))));
+    add('お知らせ: どの行にも題がこの言語である', rows.every(r => (r.querySelector('.t') || {}).textContent));
+    const buttons = [...document.querySelectorAll('#news button')];
+    add('お知らせ: 押せるのはパッチノートがある v0.5.6 だけ（v0.5.5 もほかもボタンにしない）', buttons.length === 1 && verOf(buttons[0]) === 'v0.5.6'
+      && rows.filter(r => r !== r056).every(r => !r.querySelector('button') && !r.classList.contains('link')),
+      buttons.map(verOf).join(','));
+    add('お知らせ: 「時刻は見本」の札はもう無い', !home.querySelector('h2 .sample-tag') && !Object.keys(H.T).some(l => 'home.newsSample' in (H.T[l] || {})));
+    /* nothing of the prototype shows on home inside the app */
+    const shown = el => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+    const leftovers = [...home.querySelectorAll('.sample, .sample-tag, .proto-bar, .proto, .badge-smp')].filter(shown);
+    add('ホーム: プロトタイプの品（見本の札・プロトタイプの帯）が見えていない', leftovers.length === 0, leftovers.map(x => x.className + ':' + x.textContent).join(' | '));
+    add('ホーム: 「（プロトタイプ）」「見本」の文字が見えていない', !home.innerText.includes(H.t('proto')) && !home.innerText.includes(H.t('sample')),
+      home.innerText.slice(0, 200));
+
+    /* a row with nothing behind it does nothing at all: no page change, no notice (v0.5.5 now that v0.5.6 has the notes) */
+    const plain = r055 ? r055.querySelector('.news-item') : null;
+    $('#toast').textContent = '';
+    if (plain) plain.click();
+    await tick();
+    add('お知らせ: パッチノートの無い行（v0.5.5）を押しても何も起きない（画面も知らせも）', !!plain && visibleViews() === 'view-home' && $('#toast').textContent === '',
+      visibleViews() + ' / ' + $('#toast').textContent);
+    /* the one with patch notes opens them */
+    if (buttons[0]) buttons[0].click();
+    await tick();
+    add('お知らせ: v0.5.6 を押すとパッチノートのタブが開く', visibleViews() === 'view-game' && $('#tab-pn').getAttribute('aria-selected') === 'true'
+      && !$('#panel-pn').hidden, visibleViews() + ' / ' + $('#tab-pn').getAttribute('aria-selected'));
+    const pill = $('#panel-pn .notes-head .pill');
+    add('パッチノート: 見出しの版は、押したお知らせの行と同じ v0.5.6', ($('#panel-pn .notes-head h2') || {}).textContent === 'v0.5.6',
+      ($('#panel-pn .notes-head h2') || {}).textContent);
+    add('パッチノート: v0.5.6 の札はお知らせの行と同じ（' + (out056 ? '公開済み' : '準備中') + '）', !!pill
+      && pill.textContent === H.t(out056 ? 'notes.out' : 'news.prep') && pill.classList.contains('red') === out056
+      && !Object.keys(H.T).some(l => 'notes.unreleased' in (H.T[l] || {})), pill ? pill.textContent + ' / ' + pill.className : 'no pill');
+    /* 2026-10-01（公開前レビュー 2 回目）: 見出しの時刻は見本の status の「更新 2026/09/22 03:00 UTC」だった（押した元のお知らせの行より前）。
+       今は、お知らせの行と同じ GitHub の公開時刻。準備中の間は時刻を出さない */
+    const nt = $('#notesTime'), ntTime = nt && nt.querySelector('time');
+    add('パッチノート: 見出しの時刻は、お知らせの v0.5.6 と同じ' + (out056 ? '公開時刻' : '（準備中なので出さない）') + '（見本の「更新」時刻ではない）', !!nt
+      && (out056 ? !!ntTime && ntTime.getAttribute('datetime') === t056.getAttribute('datetime') && ntTime.textContent === t056.textContent : !ntTime && nt.textContent === '')
+      && !nt.textContent.includes('2026/09/22') && !Object.keys(H.T).some(l => 'notes.updated' in (H.T[l] || {})), nt ? nt.textContent : 'no #notesTime');
+    /* the body: three groups in this language (2026-10-01: until v0.5.5 it was Japanese only, with a note saying so) */
+    /* how many: from the page's own data (spReview.notes), so the notes can lose or gain an item on the release day
+       without this file changing - but every group and every item of it must be drawn, with a heading, in this language */
+    const groups = [...document.querySelectorAll('#notesBody .ngroup')], items = [...document.querySelectorAll('#notesBody li')];
+    const nd = SR && SR.notes, wantG = nd ? nd.groups.length : -1, wantI = nd ? nd.groups.reduce((n, g) => n + g.items.length, 0) : -1;
+    add('パッチノート: 中身は NOTES のまとまりと項目が全部（どの項目にも太字の見出し）、どの文もこの言語で書いてある', !!nd && nd.v === 'v0.5.6'
+      && wantG >= 2 && wantI >= 5 && groups.length === wantG && items.length === wantI
+      && nd.groups.every(g => ['ja', 'zh', 'en'].every(l => typeof g.h[l] === 'string' && g.h[l].length > 0)
+        && g.items.every(it => ['ja', 'zh', 'en'].every(l => typeof it.b[l] === 'string' && it.b[l].length > 0 && (!it.s || (typeof it.s[l] === 'string' && it.s[l].length > 0)))))
+      && groups.every(g => !!g.querySelector('h3 svg.icon') && g.querySelector('h3').textContent.trim().length > 0)
+      && items.every(li => ((li.querySelector('b') || {}).textContent || '').trim().length > 0), groups.length + '/' + wantG + ' groups, ' + items.length + '/' + wantI + ' items');
+    const words = { ja:['インフルエンサー', 'BepInEx', '修復'], zh:['网红', '守护天使', '船员', '修复'], en:['Influencer', 'Guardian Angel', 'Crewmate', 'Repair'] }[H.lang] || [];
+    const bodyText = ($('#notesBody') || {}).textContent || '';
+    add('パッチノート: この言語の言葉で書いてある（中国語は本体の公式の言い方）', words.length > 0 && words.every(w => bodyText.includes(w))
+      && !bodyText.includes('内鬼') && (H.lang === 'ja' || !/[ぁ-ん]/.test(bodyText)), words.filter(w => !bodyText.includes(w)).join(','));
+    add('パッチノート: コマンドは code で出る（`` の印は残らない）', [...document.querySelectorAll('#notesBody code')].some(c => c.textContent === '/dummy') && !bodyText.includes('`'));
+    add('パッチノート: 「日本語だけ」の断りはもう無い', !document.getElementById('notesLangNote') && !Object.keys(H.T).some(l => 'notes.jaOnly' in (H.T[l] || {})));
+    /* 2026-10-01（仕上げ。公開前レビュー 5）: 「読んだ」印は今の版で書いて、今の版で比べる。印を書く所・比べる所の版を
+       v0.5.5 に戻した写しが、前はどの検査にも落ちなかった（NEW の札が消えない、または次の版で出ない）。
+       印を消してからタブを開き直し、書かれた印を見る。次に「最新」の状態で、今の版の印なら NEW が無く、前の版の印なら NEW が出るかを見る */
+    {
+      const seen0 = localStorage.getItem('sp.seenNotes'), st0 = localStorage.getItem('sp.sample');
+      const prNew = () => !!document.querySelector('#railTitles .tile[data-title="pocketroles"] .badge-new');
+      try { localStorage.removeItem('sp.seenNotes'); } catch (e) {}
+      document.getElementById('tab-ov').click(); await tick();
+      document.getElementById('tab-pn').click(); await tick();
+      const wrote = localStorage.getItem('sp.seenNotes');
+      add('パッチノート: 開くと「読んだ」印は今の版（NOTES の版 = お知らせの v0.5.6）になる', !!nd && wrote === nd.v && nd.v === 'v0.5.6' && $('#notesDot').hidden, wrote);
+      H.setSampleState('latest');
+      try { localStorage.setItem('sp.seenNotes', 'v0.5.6'); } catch (e) {}
+      H.renderTitles(); const newIfRead = prNew();
+      try { localStorage.setItem('sp.seenNotes', 'v0.5.5'); } catch (e) {}
+      H.renderTitles(); const newIfOld = prNew();
+      add('パッチノート: 「最新」の時、今の版の印なら NEW の札は無く、前の版（v0.5.5）の印なら NEW が出る', !newIfRead && newIfOld, newIfRead + ' / ' + newIfOld);
+      try { if (seen0 === null) localStorage.removeItem('sp.seenNotes'); else localStorage.setItem('sp.seenNotes', seen0); } catch (e) {}
+      H.setSampleState(['none', 'update', 'latest'].includes(st0) ? st0 : 'none');
+      try { if (st0 === null) localStorage.removeItem('sp.sample'); } catch (e) {}
+    }
+    /* and back the way the tab block above leaves it: opening the notes marks them read (the NEW badge goes), and
+       localStorage stays for the next language's run */
+    document.getElementById('tab-ov').click();
+    await tick();
+    try { localStorage.removeItem('sp.seenNotes'); } catch (e) {}
+    $('#notesDot').hidden = false;
+    H.renderTitles();
+
+    /* the words of home and the news are in all three languages, the old ones are gone from all three */
+    for (const k of ['home.title', 'home.body', 'home.more', 'home.open', 'home.news', 'news.prep', 'news.next', 'mod.subNone0', 'notes.out', 'tab.notes'])
+      add('3 言語の語: ' + k, ['ja', 'zh', 'en'].every(l => typeof (H.T[l] || {})[k] === 'string' && H.T[l][k].length > 0),
+        ['ja', 'zh', 'en'].map(l => l + '=' + (H.T[l] || {})[k]).join(' | '));
+    for (const k of ['home.eyebrow', 'home.newsSample', 'notes.unreleased'])
+      add('3 言語とも古い語が無い: ' + k, ['ja', 'zh', 'en'].every(l => !(k in (H.T[l] || {}))));
+    add('3 言語の語: home.more はタブの「パッチノート」と同じ語', ['ja', 'zh', 'en'].every(l => H.T[l]['home.more'] === H.T[l]['tab.notes']));
+    add('3 言語の語: パッチノートの前書き（notes.lead）とメディアの札（media.new）は v0.5.6 のこと',
+      ['ja', 'zh', 'en'].every(l => (H.T[l]['notes.lead'] || '').includes('v0.5.6') && (H.T[l]['media.new'] || '').includes('v0.5.6')
+        && !(H.T[l]['notes.lead'] || '').includes('v0.5.5') && !(H.T[l]['media.new'] || '').includes('v0.5.5')),
+      ['ja', 'zh', 'en'].map(l => l + '=' + H.T[l]['media.new']).join(' | '));
+    for (const pre of ['home.', 'news.', 'notes.', 'mod.']) {
+      const keys = l => Object.keys(H.T[l] || {}).filter(k => k.startsWith(pre)).sort().join(',');
+      add('3 言語の鍵がそろっている: ' + pre + '*', keys('ja') === keys('zh') && keys('ja') === keys('en'),
+        'ja[' + keys('ja') + '] zh[' + keys('zh') + '] en[' + keys('en') + ']');
+    }
+    H.closeAll(); H.show('game');
+    await tick();
+  }
+
   /* ================= high contrast and "reduce motion" ================= */
   if (all && hc) {
     add('Windows high contrast really is on for this run', matchMedia('(forced-colors: active)').matches);
@@ -908,11 +1071,18 @@ window.__spChecks = async function(group, mode){
        v1.0.2 から v1.1.1 まで 6 回、赤いまま出していました**（持ち主 2026-09-27 に発覚）。
        自己診断が鳴りっぱなしだと誰も見なくなり、その裏で別のバグ（設定の版が「V1.0.0（見本）」のまま）が
        release まで残りました。なので見張りは**消さずに、向きを変えて**残します:
-       いまは「ボタンが**無い**こと」を見ます。design/launcher-proto/index.html にはまだ frOpen が残っているので、
-       もし誰かが tools/import-ui.ps1 で ui を作り直したら、この項目が落ちて気づけます。 */
+       いまは「ボタンが**無い**こと」を見ます。2026-10-01 に design/launcher-proto/index.html からも frOpen を外したので、
+       ui を作り直しても戻りません。もし誰かが design に戻したら、この項目が落ちて気づけます。 */
     if (typeof window.spFirstRun === 'function') {
       window.spFirstRun();
       await tick();
+      /* 2026-10-01（公開前レビュー 2 回目）: 文書 3 本（ui\legal\）の読み込みは非同期。40 ms 1 回だけ待っていた頃は、自己テストと
+         同時に走らせる（PC が忙しい）と、読み終わる前に見て「警告は出ていない／チェックは押せる」が落ちた。読み終わるまで（最大 5 秒）待つ */
+      for (let i = 0; i < 100; i++) {
+        const w = $('#frDocWarn'), a = $('#frAgree');
+        if (w && w.hidden === true && a && a.disabled === false) break;
+        await new Promise(r => setTimeout(r, 50));
+      }
 
       const fr = $('#firstrun'), open = $('#frOpen'), warn = $('#frDocWarn'), agree = $('#frAgree');
       add('同意の画面: 出る', fr && fr.hidden === false);
@@ -938,6 +1108,157 @@ window.__spChecks = async function(group, mode){
       document.body.removeAttribute('inert');
       for (const n of document.body.children) if (n.id !== 'firstrun' && n.id !== 'frAsk') n.removeAttribute('inert');
     }
+
+    /* ---- 2026-10-01（公開前レビュー）: 設定 → Among Us の場所 ----
+       (11) インストール前（コピーがまだ無い）の行にも、どこに作るか（set.copyHere と #set-copy-path）を出す。アプリでは
+            "status" の modDir がそこに入る（host-v01.js applyPaths）。押す前に場所が分からないボタンにしない。
+       (9)  「場所を変える」(moveCopy) の断りの文や、設定を保存できず元にも戻せなかった時の復旧の手順（アプリの r.error）は、
+            3.6 秒で消えるトーストではなく、読み返せるダイアログで（reportFlow と同じ形）。busy は今までどおりトースト。
+       (10) 動作環境の表: BepInEx は 3 言語とも win-x64（en だけ win-x86 のままだった）。
+       ページの状態を "status" で変えるので、この回の一番最後に置く（言語・明暗ごとにページは読み直される）。 */
+    {
+      const dlgOpen = () => !$('#m-confirm').hidden;
+      /* the layer closes with its own animation (hidden only at the end; at once under "reduce motion"): wait for it */
+      const closeDlg = async () => {
+        const c = $('#m-confirm').querySelector('.dlg-acts [data-close]'); if (dlgOpen() && c) c.click(); H.closeAll();
+        for (let i = 0; i < 40 && dlgOpen(); i++) await new Promise(r => setTimeout(r, 50));
+      };
+      /* settings → PocketRoles, really open. closeDlg's closeAll starts closing Settings too, and a layer that is still
+         fading out is not "hidden" yet: spReview.setPage would then only switch its page and leave it closing. Found on
+         2026-10-01 when the check 「閉じる」で設定に戻る below was added: it failed for this test's reason, not the page's.
+         So wait for it to be gone, then open it. */
+      const openSettings = async () => {
+        for (let i = 0; i < 40 && !$('#m-settings').hidden; i++) await new Promise(r => setTimeout(r, 50));
+        SR.setPage('pocketroles'); await tick();
+      };
+      const DIR = 'D:\\Games\\Among Us PocketRoles';
+      window.__emit({ type:'event', name:'status', data:{ mode:'friend', installed:false, steamFound:true, modDir:DIR, copySource:'default' } });
+      await tick();
+      await closeDlg(); await openSettings();
+      const word = H.t('set.copyHere') || '';
+      const cp = $('#set-copy-path'), row = cp && cp.closest('.sub-path');
+      add('場所: インストール前の「' + word + '」の語がこの言語にある', word.length > 0 && word !== 'set.copyHere', word);
+      add('場所: インストール前の行にも、どこに作るか（アプリの modDir）', !!cp && cp.tagName === 'CODE' && cp.textContent === DIR,
+        cp ? cp.textContent : 'no #set-copy-path');
+      add('場所: ... その語と「場所を変える」が同じ行に', !!row && row.textContent.includes(word) && !!row.querySelector('#set-movecopy'),
+        row ? row.textContent : 'no row');
+
+      const refusal = 'MOVE-REFUSED: OneDrive の中には置けません（約 1 GB を同期し続けます）。別のフォルダを選んでください。';
+      window.__reply.moveCopy = { answer:{ ok:false, error:refusal } };
+      $('#toast').textContent = '';
+      const n0 = window.__sent.length;
+      $('#set-movecopy').click();
+      await new Promise(r => setTimeout(r, 300));
+      add('場所を変える: 押すと moveCopy を 1 回だけ送る', window.__sent.slice(n0).filter(m => m.cmd === 'moveCopy').length === 1,
+        JSON.stringify(window.__sent.slice(n0).map(m => m.cmd)));
+      add('場所を変える: 断りの文は読み返せるダイアログに（消えるトーストではない）', dlgOpen() && $('#cfBody').textContent === refusal,
+        dlgOpen() + ' / ' + $('#cfBody').textContent + ' / toast: ' + $('#toast').textContent);
+      add('場所を変える: ... 題はこの操作の名前、やめるボタンは無く閉じるだけ',
+        $('#cfTitle').textContent === H.cmdLabel('moveCopy') && $('#m-confirm').querySelector('.dlg-acts [data-close]').hidden === true
+        && $('#cfYes').textContent.trim().length > 0, $('#cfTitle').textContent + ' / ' + $('#cfYes').textContent);
+      /* 2026-10-01（公開前レビュー 2 回目）: 「別のフォルダを選んでください」と言うのに、閉じると設定ごと閉じていた。今は設定の上に出て、
+         「閉じる」で設定の同じ所（場所を変える）へ戻る */
+      add('場所を変える: 断りのダイアログは設定の上に出る（設定は開いたまま）', dlgOpen() && !$('#m-settings').hidden,
+        'settings hidden: ' + $('#m-settings').hidden);
+      const nY = window.__sent.length;
+      $('#cfYes').click();
+      for (let i = 0; i < 40 && dlgOpen(); i++) await new Promise(r => setTimeout(r, 50));
+      await new Promise(r => setTimeout(r, 600));   /* long enough for Settings to have faded out, had anything closed it */
+      add('場所を変える: 「閉じる」で、設定の同じ所（場所を変える）に戻る（選び直せる）',
+        !dlgOpen() && !$('#m-settings').hidden && !$('#m-settings').inert && !!$('#set-movecopy') && $('#set-movecopy').getClientRects().length > 0
+        && window.__sent.length === nY,
+        dlgOpen() + ' / settings hidden ' + $('#m-settings').hidden + ' / inert ' + $('#m-settings').inert + ' / sent ' + JSON.stringify(window.__sent.slice(nY).map(m => m.cmd)));
+
+      await closeDlg(); await openSettings();
+      window.__reply.moveCopy = { answer:{ ok:false, busy:true } };
+      $('#toast').textContent = '';
+      $('#set-movecopy').click();
+      await new Promise(r => setTimeout(r, 300));
+      add('場所を変える: busy は今までどおりトースト（ダイアログは出ない）', !dlgOpen() && $('#toast').textContent.length > 2,
+        dlgOpen() + ' / ' + $('#toast').textContent);
+
+      await closeDlg(); await openSettings();
+      window.__reply.moveCopy = { answer:{ ok:true, data:{ cancelled:true } } };
+      $('#toast').textContent = '';
+      $('#set-movecopy').click();
+      await new Promise(r => setTimeout(r, 300));
+      add('場所を変える: やめた時（cancelled）は何も出さない', !dlgOpen() && $('#toast').textContent === '',
+        dlgOpen() + ' / ' + $('#toast').textContent);
+      delete window.__reply.moveCopy;
+      await closeDlg();
+
+      const page = document.documentElement.outerHTML;
+      add('動作環境の表: BepInEx は win-x64（win-x86 はどの言語にも無い）', !page.includes('win-x86') && page.includes('Unity.IL2CPP / win-x64). StarPocket Client downloads it'));
+    }
+  }
+
+  /* ================= 2026-10-01: ホームの状態の行（アプリの "status"）と、初めてのインストールは MOD の画面 =================
+     "status" でページの状態を変えるので、この回の一番最後に置く（言語・明暗ごとにページは読み直される）。 */
+  {
+    const visibleViews = () => [...document.querySelectorAll('.view')].filter(v => !v.hidden).map(v => v.id).join(',');
+    const st = $('#homeState');
+    const stText = () => st ? (st.hidden ? '(hidden)' : st.textContent) : 'no #homeState';
+    H.closeAll(); H.show('home');
+    window.__emit({ type:'event', name:'status', data:{ mode:'friend', installed:true, pstate:'ready', dll:'0.5.5', steamVersion:'2026.9.29', copyVersion:'2026.9.29', steamFound:true } });
+    await tick();
+    add('ホームの状態の行: 入っている版（アプリの status の dll）', !!st && !st.hidden && st.textContent === H.t('mod.sub', { v:'v0.5.5' }), stText());
+    window.spHostUpdateAnswer({ ok:true, data:{ available:true, version:'0.5.6' } });
+    await tick();
+    add('ホームの状態の行: アップデートあり（「更新を確認」が見つけた時）', !!st && !st.hidden && st.textContent === H.t('mod.subUpdate0', { v:'v0.5.5' }), stText());
+    window.__emit({ type:'event', name:'status', data:{ mode:'friend', installed:false, pstate:'install', steamFound:true } });
+    await tick();
+    add('ホームの状態の行: 未インストール（見本の「約 1.0 GB」は付けない）', !!st && !st.hidden && st.textContent === H.t('mod.subNone0') && !/GB|MB/.test(st.textContent), stText());
+    const modCard = $('#homeMods .gcard:not(.ghost) .gsub');
+    add('ホームの MOD のカード: 未インストールに見本の大きさを付けない', !!modCard && modCard.textContent === H.t('mod.subNone0'), modCard ? modCard.textContent : 'no card');
+    add('ホーム: 状態が変わってもホームのまま（status で MOD の画面へ飛ばない）', visibleViews() === 'view-home', visibleViews());
+    /* 2026-10-01（公開前レビュー 2 回目）: 起動がホームになったので、プレイボタンの赤・橙の札は MOD の画面を開くまで見えない。
+       修復が要る時は「未インストール」、Aegis が止めた時・Steam 版が更新された時は「インストール済み」と出ていた。
+       今はプレイボタンの見出し（ps.<状態>）を、注意の色で */
+    const homeWith = async (installed, pstate) => {
+      window.__emit({ type:'event', name:'status', data:{ mode:'friend', installed, pstate, dll:'0.5.5', steamVersion:'2026.9.29', copyVersion:'2026.9.29', steamFound:true } });
+      await tick();
+    };
+    /* the colour is the .attn rule's (in high contrast the system's own colours win, so the rule is looked at, not the pixels) */
+    const attnOk = key => !!st && !st.hidden && H.t(key) !== key && st.textContent === H.t(key) && st.classList.contains('attn')
+      && /color/.test(ruleText('.eyebrow .home-state.attn'));
+    await homeWith(false, 'repair');
+    add('ホームの状態の行: 修復が要る時は「' + H.t('ps.repair') + '」（未インストールではない）、注意の色', attnOk('ps.repair'), stText());
+    await homeWith(true, 'blocked');
+    add('ホームの状態の行: Aegis が止めた時は「' + H.t('ps.blocked') + '」（インストール済みではない）', attnOk('ps.blocked'), stText());
+    await homeWith(true, 'sync');
+    add('ホームの状態の行: Steam 版が更新された時は「' + H.t('ps.sync') + '」', attnOk('ps.sync'), stText());
+    await homeWith(true, 'ready');
+    add('ホームの状態の行: 直ったら「インストール済み」に戻り、注意の色も外れる', !!st && st.textContent === H.t('mod.sub', { v:'v0.5.5' }) && !st.classList.contains('attn'), stText());
+    add('ホーム: ... その間もホームのまま', visibleViews() === 'view-home', visibleViews());
+    window.__emit({ type:'event', name:'status', data:{ mode:'friend', installed:false, pstate:'install', steamFound:true } });
+    await tick();
+
+    /* the first install: from home, the library's インストール (the same FLOW as the play button) opens the MOD page,
+       where the steps are shown. The translation question comes first (chatTranslate is not chosen yet); closing it ends
+       the flow before anything is sent. */
+    H.closeAll(); H.show('library');
+    await tick();
+    const lib = $('#libPrimary');
+    add('初めてのインストール: ライブラリのボタンは「インストール」', !!lib && lib.dataset.cmd === 'install', lib ? (lib.dataset.cmd || lib.dataset.view) : 'no #libPrimary');
+    const n0 = window.__sent.length;
+    if (lib) lib.click();
+    await tick();
+    add('初めてのインストール: 押すと MOD の画面へ', visibleViews() === 'view-game', visibleViews());
+    add('初めてのインストール: レールの「今のページ」は PocketRoles（ホームではない）',
+      !!$('.rail .tile[data-view="game"][aria-current="page"]') && !$('.rail .rail-btn[data-view="home"][aria-current]'),
+      [...document.querySelectorAll('.rail [aria-current="page"]')].map(b => b.dataset.view).join(','));
+    H.closeAll();
+    await tick();
+    add('初めてのインストール: 翻訳の質問を閉じると、何も送らずに終わる', window.__sent.slice(n0).filter(m => m.cmd === 'install').length === 0,
+      JSON.stringify(window.__sent.slice(n0).map(m => m.cmd)));
+    /* the review hook for the same first install (spReview.setup) lands on the MOD page too */
+    H.show('home');
+    await tick();
+    SR.setup();
+    await tick();
+    add('初めてのインストール（見本の流れ spReview.setup）も MOD の画面', visibleViews() === 'view-game', visibleViews());
+    H.closeAll();
+    await tick();
   }
   return out;
 };

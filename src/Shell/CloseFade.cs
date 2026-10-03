@@ -63,6 +63,26 @@ namespace Starpocket.Client.Shell
         /// 時も 0（演出しない側）。</summary>
         public static int PlannedMs(bool windowVisible, bool? animationsOn) => windowVisible && animationsOn == true ? DurationMs : 0;
 
+        /// <summary>
+        /// 2026-10-01（持ち主の画面録画「クライアントの閉じられ方が消えてみたい」）: トレイへしまう時は、Windows 自身の
+        /// **最小化の動き（タスクバーへ縮んでいく）**を見せてから隠す。Steam など普通のアプリと同じ去り方。
+        /// 最小化の絵は DWM が窓の絵を縮めて動かすので、HWND の大きさは変わらず WebView2 もガタつかない（頭の注意書きのとおり）。
+        /// この間 <see cref="CloseFade"/> は「時計だけ」で回す（α は触らない）。後から来た方が勝つ・途中でやめられる、は同じ。
+        /// </summary>
+        public const int MinimizeHoldMs = 320;
+
+        /// <summary>
+        /// トレイへしまう時の去り方。"minimize"（最小化の動き → 隠す）/ "fade"（v1.2 の薄くなる）/ "none"（すぐ隠す）。
+        /// 最小化の動きは、窓が見えていて・まだ最小化されておらず・Windows の「アニメーション効果」と「最小化の動き」が
+        /// **両方** ON の時だけ。どちらかが OFF・読めない時は、今までどおりの薄くなる（さらに「アニメーション効果」が OFF なら無し）。
+        /// 既に最小化されている窓（タスクバーから最小化した後にゲームが始まった等）を最小化し直しても何も見えないので、薄くなる側。
+        /// </summary>
+        public static string PlannedLeave(bool windowVisible, bool minimized, bool? animationsOn, bool? minimizeAnimationOn)
+        {
+            if (windowVisible && !minimized && animationsOn == true && minimizeAnimationOn == true) return "minimize";
+            return PlannedMs(windowVisible, animationsOn) > 0 ? "fade" : "none";
+        }
+
         /// <summary>経過時間に対する不透明度: 1.0 から 0.0 へ、コサインでなめらかに。durationMs が 0 以下なら 0。</summary>
         public static double AlphaAt(double elapsedMs, int durationMs)
         {

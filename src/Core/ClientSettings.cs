@@ -10,6 +10,8 @@
 // でない間だけ書く。
 // profileName (v1.3, フレンド欄のプロフィールの名前、16 文字まで) は空でない間だけ、profileAvatar (0-5、組み込みの絵の番号) は
 // 0 でない間だけ書く（ページの profile.set が持ってくる。自分の画像そのものは settings.json ではなく profile\avatar.png）。
+// cleanupArmed (v1.1.2, 直し 1) は、この PC で初めてアプリを開いた時に書く true だけ（それまでは起動の片づけをしない。
+// src\Core\FirstCleanup.cs）。ページからは変えられない（Bridge.SettingKeys に無い）。
 // Keys this version does not know are kept as they are (a later version's settings survive a downgrade).
 // SPDX-License-Identifier: GPL-3.0-or-later
 using System;
@@ -34,6 +36,9 @@ namespace Starpocket.Client.Core
         public string Lang { get; private set; } = "auto";
         /// <summary>The first hide to the tray showed its one-time notice (SPEC 5.4).</summary>
         public bool TrayHintShown { get; set; }
+        /// <summary>v1.1.2 直し 1（src\Core\FirstCleanup.cs）: この PC でアプリを一度開いた＝起動の片づけ（古いログ・報告 zip・
+        /// events.log の古い行を消す処理）を始めてよい、の印。初めての起動が書く。本物の true の時だけ、true の間だけ書く。</summary>
+        public bool CleanupArmed { get; set; }
         /// <summary>What PLAY starts (the owner, 2026-09-23: a choice in the Client's settings): pocketroles (default) or vanilla.</summary>
         public string StartGame { get; private set; } = StartPocketRoles;
 
@@ -123,6 +128,18 @@ namespace Starpocket.Client.Core
         public string DevSourcePath { get; private set; } = "";
 
         public void SetDevSourcePath(string path) => DevSourcePath = path ?? "";
+
+        /// <summary>2026-10-01: MOD 用のコピー（…\Among Us PocketRoles）を置く場所。空なら今までの既定（デスクトップ）。
+        /// 引数 --game-dir と環境変数 POCKETROLES_GAMEDIR の方が強い（GameFolders.ResolveModded / CopyPlace.Source）。
+        /// 書くのは設定画面の「場所を変える」（ClientApp.DoMoveCopy）だけで、コピーを移し終えてから書く。
+        /// 公開前レビュー 2026-10-01: 今までのランチャー（PocketRolesLauncher.ps1）と Aegis.ps1 はこの値を読まない（読むのは
+        /// POCKETROLES_GAMEDIR だけ）。移した後に今までのランチャーを開くと、コピーが「なし」に見え、「インストール」でデスクトップに
+        /// 2 つ目のコピー（約 1 GB）を作る。v1.1.2（持ち主の決定 2026-10-01 Q6、設計 B12）: 移し終えた時の文（cp_done・cp_done_left・
+        /// cp_set_done、3 言語）は「今までのランチャーは、もう開かないでください」と頼む（前は「環境変数 POCKETROLES_GAMEDIR も同じ場所に」
+        /// と頼んでいたが、利用者には難しかった）。アプリから環境変数は書かない（ユーザーの環境を勝手に変えない）。</summary>
+        public string CopyDir { get; private set; } = "";
+
+        public void SetCopyDir(string path) => CopyDir = path ?? "";
 
         /// <summary>v1.3: フレンド欄のプロフィールの名前（ページの profile.set が持ってくる）。16 文字まで、制御文字は除く。
         /// 空でない間だけ settings.json に書く。</summary>
@@ -217,6 +234,7 @@ namespace Starpocket.Client.Core
                     if (kv.Key == "close") { var v = kv.Value as string; if (IsValidClose(v)) s.Close = v; }
                     else if (kv.Key == "lang") s.Lang = Core.Lang.NormalizePref(kv.Value as string);
                     else if (kv.Key == "trayHintShown") s.TrayHintShown = kv.Value is bool b && b;
+                    else if (kv.Key == "cleanupArmed") s.CleanupArmed = kv.Value is bool armed && armed;   // v1.1.2 直し 1: 本物の true だけ
                     else if (kv.Key == "startGame") { var v = kv.Value as string; if (IsValidStartGame(v)) s.StartGame = v; }
                     else if (kv.Key == "chatTranslate") { var v = kv.Value as string; if (IsValidChatTranslate(v)) s.ChatTranslate = v; }
                     else if (kv.Key == "accent") { var v = kv.Value as string; if (IsValidAccent(v)) s.SetAccent(v); }
@@ -227,6 +245,7 @@ namespace Starpocket.Client.Core
                     // v1.4: a string only, and it still has to pass DevSource.IsDevFolder every start - this line is a
                     // remembered answer, never a permission on its own
                     else if (kv.Key == "devSource") { var v = kv.Value as string; if (v != null) s.DevSourcePath = v; }
+                    else if (kv.Key == "copyDir") { var v = kv.Value as string; if (v != null) s.CopyDir = v; }   // 2026-10-01: string のみ
                     else if (kv.Key == "profileName") { var v = kv.Value as string; if (v != null) s.ProfileName = CleanProfileName(v); }   // v1.3: string のみ
                     else if (kv.Key == "profileAvatar") { int v; if (TryVolume(kv.Value, out v) && v >= 0 && v < AvatarCount) s.ProfileAvatar = v; }   // v1.3: 0〜5 のみ
                     else s.other[kv.Key] = kv.Value;
@@ -241,6 +260,7 @@ namespace Starpocket.Client.Core
         {
             var obj = new Dictionary<string, object>(StringComparer.Ordinal) { ["close"] = Close, ["lang"] = Lang };
             if (TrayHintShown) obj["trayHintShown"] = true;
+            if (CleanupArmed) obj["cleanupArmed"] = true;   // v1.1.2 直し 1
             if (StartGame != StartPocketRoles) obj["startGame"] = StartGame;
             if (ChatTranslate != "unset") obj["chatTranslate"] = ChatTranslate;
             if (Accent != DefaultAccent) obj["accent"] = Accent;
@@ -249,6 +269,7 @@ namespace Starpocket.Client.Core
             if (Volume != DefaultVolume) obj["volume"] = Volume;
             if (DevBuild) obj["devBuild"] = true;
             if (DevSourcePath.Length > 0) obj["devSource"] = DevSourcePath;   // v1.4
+            if (CopyDir.Length > 0) obj["copyDir"] = CopyDir;   // 2026-10-01
             if (ProfileName.Length > 0) obj["profileName"] = ProfileName;   // v1.3
             if (ProfileAvatar != 0) obj["profileAvatar"] = ProfileAvatar;
             foreach (var kv in other) obj[kv.Key] = kv.Value;

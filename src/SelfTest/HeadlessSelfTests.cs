@@ -851,8 +851,63 @@ namespace Starpocket.Client.SelfTest
             r.Section("window and tray");
             r.Test("SPEC 5.4: the window steps aside for the game", () =>
             {
-                r.Check("a window on screen steps aside", ClientApp.StepAsideForGame(true));
-                r.Check("one that is already away is left alone", !ClientApp.StepAsideForGame(false));
+                r.Check("a window on screen steps aside", ClientApp.StepAsideForGame(true, false));
+                r.Check("one that is already away is left alone", !ClientApp.StepAsideForGame(false, false));
+                // 公開前レビュー（2 回目）: 最小化している窓は「画面に出ている」ではない（ゲームの後で元の大きさに広がって出てこない）
+                r.Check("a minimized window is left alone too (it would come back un-minimized after the game)", !ClientApp.StepAsideForGame(true, true));
+            });
+            // 公開前レビュー（2 回目）2026-10-01: GameStepAside の道を全部（窓にも時計にも触らない）
+            r.Test("SPEC 5.4: when the window that stepped aside comes back (GameStepAside)", () =>
+            {
+                var t0 = new DateTime(2026, 10, 1, 12, 0, 0);
+                var s = new GameStepAside();
+                r.Check("on screen: steps aside", s.Launched(true, false, false, t0) && s.Restore);
+                r.Check("the game shows up: nothing yet", !s.Poll(false, true, t0.AddSeconds(2)));
+                r.Check("long game: still nothing", !s.Poll(true, true, t0.AddMinutes(30)));
+                r.Check("the game ends: the window comes back (once)", s.Poll(true, false, t0.AddMinutes(31)) && !s.NeverCameUp && !s.Restore);
+                r.Check("... and not again", !s.Poll(false, false, t0.AddMinutes(32)));
+
+                s = new GameStepAside();
+                r.Check("minimized: does not step aside", !s.Launched(true, true, false, t0) && !s.Restore);
+                r.Check("... and is not brought back after the game", !s.Poll(false, true, t0.AddSeconds(2)) && !s.Poll(true, false, t0.AddMinutes(5)));
+                s = new GameStepAside();
+                r.Check("hidden (tray): does not step aside", !s.Launched(false, false, false, t0));
+                r.Check("... and is not brought back", !s.Poll(false, false, t0.AddMinutes(5)));
+
+                // the game closed before the first 2 s poll (or never came up): the window was left in the tray for ever
+                s = new GameStepAside();
+                s.Launched(true, false, false, t0);
+                r.Check("mod copy, no game yet at " + (GameStepAside.ModStartGraceSeconds - 1) + " s: waits", !s.Poll(false, false, t0.AddSeconds(GameStepAside.ModStartGraceSeconds - 1)));
+                r.Check("mod copy, no game at all by " + GameStepAside.ModStartGraceSeconds + " s: the window comes back", s.Poll(false, false, t0.AddSeconds(GameStepAside.ModStartGraceSeconds)) && s.NeverCameUp && !s.Restore);
+                r.Check("... once", !s.Poll(false, false, t0.AddSeconds(GameStepAside.ModStartGraceSeconds + 2)));
+                s = new GameStepAside();
+                s.Launched(true, false, true, t0);
+                r.Check("plain Among Us through Steam waits longer (Steam may be starting): nothing at " + GameStepAside.ModStartGraceSeconds + " s",
+                    !s.Poll(false, false, t0.AddSeconds(GameStepAside.ModStartGraceSeconds)));
+                r.Check("... the window comes back at " + GameStepAside.VanillaStartGraceSeconds + " s", s.Poll(false, false, t0.AddSeconds(GameStepAside.VanillaStartGraceSeconds)) && s.NeverCameUp);
+                r.Check("the two waits: the mod's short, Steam's generous", GameStepAside.ModStartGraceSeconds >= 10 && GameStepAside.ModStartGraceSeconds <= 30 && GameStepAside.VanillaStartGraceSeconds >= 60);
+                s = new GameStepAside();
+                s.Launched(true, false, true, t0);
+                r.Check("Steam was slow but the game came at 100 s: no early return", !s.Poll(false, true, t0.AddSeconds(100)));
+                r.Check("... a game seen once is waited for however long it runs", !s.Poll(true, true, t0.AddSeconds(900)) && s.Restore);
+                r.Check("... and it comes back when that game ends", s.Poll(true, false, t0.AddSeconds(901)) && !s.NeverCameUp);
+
+                // the person put the window away themselves during the game (opened it from the tray, then ✕ or 「－」)
+                s = new GameStepAside();
+                s.Launched(true, false, false, t0);
+                s.Poll(false, true, t0.AddSeconds(2));
+                s.PersonPutAway();
+                r.Check("put away by the person during the game: not brought back when it ends", !s.Restore && !s.Poll(true, false, t0.AddMinutes(10)));
+                s = new GameStepAside();
+                s.Launched(true, false, false, t0);
+                s.PersonPutAway();
+                r.Check("... nor when no game ever showed up", !s.Poll(false, false, t0.AddMinutes(10)));
+            });
+            r.Test("a play asked from outside goes through the page only when the window is on screen", () =>
+            {
+                r.Check("window on screen, page ready: the page's PLAY (progress and Aegis's answer show on the MOD page)", ClientApp.PlayThroughPage(false, true));
+                r.Check("window away (tray, minimized, --autolaunch): the app starts it itself, no window", !ClientApp.PlayThroughPage(true, true));
+                r.Check("page not ready yet: the app starts it itself", !ClientApp.PlayThroughPage(false, false));
             });
             r.Test("the tray's 15-second rule (Aegis.ps1)", () =>
             {

@@ -5,7 +5,7 @@
 - StarPocket Client is the launcher app of StarPocket Games for *PocketRoles*, a host-only mod for the Steam version of Among Us.
 - It installs the mod into a separate copy of the game, keeps that copy in sync with the Steam copy, launches it, and runs the Aegis pre-play checks in the same process.
 - It is one native Windows process (C# WinForms + WebView2, .NET Framework 4.8, x86) that Task Manager shows as "StarPocket Client", not a PowerShell script.
-- The app sends nothing: every request is a plain GET. Downloads (the mod, BepInEx) happen only on a button press, from an allow-list of https hosts enforced in `src\Core\Downloads.cs`; the one automatic request is Aegis's signed definitions file from GitHub.
+- The app sends nothing: every request is a plain GET. Downloads (the mod, BepInEx) and the update check happen only on a button press, or when the user runs `--action install`, `--action check` or `--verify-download` themselves, from an allow-list of five https hosts enforced in `src\Core\Downloads.cs`; the one automatic request is Aegis's signed definitions file from GitHub.
 - The BepInEx zip's SHA-256 is pinned in `src\AppInfo.cs` and checked before anything is unpacked (`docs\BEPINEX-PIN.md`).
 - Build: `dotnet build -c Release` on Windows with the .NET SDK 8 (details under "ビルド" below). Running the app needs the Microsoft Edge WebView2 runtime.
 - Licence: GPL-3.0-or-later (`LICENSE`, `NOTICE`). Third-party notices and what the app downloads on request are listed in `NOTICE`.
@@ -17,7 +17,7 @@ StarPocket Games のランチャーアプリです（`StarPocket Client.exe`）�
 - C# WinForms + WebView2、.NET Framework 4.8（Windows 10 1903 以降・11 に最初から入っている）、x86
 - 画面は `ui\`（プロトタイプの HTML）を WebView2 で表示します。画面はネットに出ません（`app.starpocket.local` 以外への読み込みはすべて止めます）
 - **アプリがネットに送るものはありません**（受け取るだけです）。自動でつなぐのは Aegis の定義ファイルの取得だけです（アプリを開いた時に 1 回と、そのあと窓を開いた時かプレイを押した時に前回から 12 時間以上たっていればもう 1 回。GitHub の `wakayamachannel/PocketRoles` の `main/aegis/definitions.txt` と `.sig` を受け取る。1 つにつき 8 秒で打ち切り。確かめ方は PowerShell 版の `Aegis.ps1`（PocketRoles リポジトリの `aegis\Aegis.ps1`。このリポジトリには入っていません）と同じ。この PC の情報は送りません）
-- そのほかのダウンロード（MOD の更新の確認・MOD 本体・BepInEx）は、**ボタンを押した時だけ**です。取りに行ってよいのは https の 4 つのホスト（`api.github.com`・`github.com`・`objects.githubusercontent.com`・`builds.bepinex.dev`）だけで、これはコードで止めています（`src\Core\Downloads.cs`）
+- そのほかのダウンロード（MOD の更新の確認・MOD 本体・BepInEx）は、**ボタンを押した時と、本人が `--action install`・`--action check`・`--verify-download` を実行した時だけ**です。取りに行ってよいのは https の 5 つのホスト（`api.github.com`・`github.com`・`objects.githubusercontent.com`・`release-assets.githubusercontent.com`・`builds.bepinex.dev`）だけで、これはコードで止めています（`src\Core\Downloads.cs`）
 - `"StarPocket Client.exe" --verify-download` は、配布元から BepInEx の zip を 1 つだけ受け取り、書き留めてある SHA-256 と同じか・中身を取り出せるかを確かめて、すぐ全部消します。**ゲームのフォルダーには一切触れません**（作業用は `%TEMP%\StarPocket-verify` だけ。終わったら丸ごと消します）。公開の前に 1 回だけ手で走らせるものです（[`docs/BEPINEX-PIN.md`](docs/BEPINEX-PIN.md)）
 - 画面を描く Microsoft Edge WebView2 ランタイム（Microsoft の部品。アプリが起動する `msedgewebview2.exe`）は、Windows の診断データの設定と Microsoft のプライバシーに関する声明に従って、Microsoft と通信することがあります（自分の更新の確認など）。画面（`ui`）そのものはネットから何も読み込みません
 - ライセンス: GPL-3.0-or-later（`LICENSE`・`NOTICE`）
@@ -39,9 +39,10 @@ StarPocket Games のランチャーアプリです（`StarPocket Client.exe`）�
 | exe の隣のファイルが足りない時（exe だけをコピーした時など）の知らせ | `src\Core\PackageFiles.cs`・`src\Program.cs` |
 | 「mod 付きで起動」（今のランチャーと同じフォルダの決め方・確認・引数） | `src\Core\GameLauncher.cs`・`GameFolders.cs`・`InstallStatus.cs` |
 | v0.1.1: 設定 → PocketRoles の「起動するゲーム」（PocketRoles / ふつうの Among Us（Steam））。ふつうを選ぶと、プレイとトレイの「プレイ」は `steam://rungameid/945360` を開くだけ（MOD なし。起動前スキャン・ログの保存・MOD 用のコピーには触らない）。プレイの字の下に小さくゲームの名前、その下の行に、どちらが起動するかと「変更」。起動のあとは、ゲームが動き出すまで（最長 30 秒）「プレイ中」。選んだものは `settings.json` の `startGame`。設定の「修復」は、下向きの矢印が受け皿に入る絵 | `src\Core\ClientSettings.cs`・`GameLauncher.cs`（`LaunchVanilla`）・`src\Shell\Bridge.cs`・`ui\` |
-| 前回のログの保存と 30 日の削除（今のランチャーと同じ規則・同じ Mutex） | `src\Core\GameLogs.cs` |
+| 前回のログの保存と 30 日の削除（今のランチャーと同じ規則・同じ Mutex）。**この PC で初めて開いた時だけは、何も消しません**（ログの保存だけ。events.log の整理も。v1.1.2） | `src\Core\GameLogs.cs`・`src\Core\FirstCleanup.cs` |
 | Aegis（PowerShell 版の `Aegis.ps1`（PocketRoles リポジトリの `aegis\Aegis.ps1`）のトレイと起動前スキャンを同じプロセスの中へ）: 起動時のスキャン 13 項目、署名付きの定義ファイル（同梱・キャッシュ・起動時に 1 回の取得と、12 時間たった後に窓を開いた時かプレイの時の取り直し、古い版に戻さない）、ゲーム中のログの見張りと Aegis 独自の通知、events.log の 30 日の整理、起動前スキャン（赤があればプレイを止める） | `src\Aegis\`（`AegisService.cs` が入口。シェルとの境目は `IAegisService.cs`） |
 | 同梱の定義ファイル（MOD のリリースと同じバイト）。**このリポジトリには入れていません**（リリースの添付として配っています。下の「Aegis」） | `aegis\definitions.txt`・`aegis\definitions.txt.sig`（exe の隣に置く） |
+| 同梱の利用規約・プライバシーポリシー・遊び方のルール（3 言語。下書きから印とメモを落とした物で、サイトの文と同じ）。v1.1.2: 清書で残っていた切れ端と作業のメモ（利用規約 第18条2項・第11条4項3号、プライバシーポリシー 3.5・3.9・第6条）を消し、チャット翻訳の説明を本当の事（v0.5.4 以前から上げて設定を変えていない人はオンのまま残る事がある）に直した。版は 1.0 のまま（同意し直しの画面は出ない）。自己テストが、切れ端とメモが無い事を 1 行ずつ見る | `ui\legal\*.md`・`src\SelfTest\ConsentSelfTests.cs` |
 | v1.3: フレンド欄のプロフィールの絵に自分の画像（PNG / JPG / ICO / BMP / GIF、20 MB・3000 万画素まで。WebP はこの版では読まない）。アプリが画像を選ぶ窓を開き、正方形 256px の PNG の写しを `%LOCALAPPDATA%\StarPocket\Client\profile\avatar.png` に置く（元の画像は触らない・どこにも送らない）。「画像をやめて元の絵に戻す」で写しを消す。読めない画像は元の絵のままで理由を出す | `src\Core\ProfileImage.cs`・`src\Shell\ClientApp.cs`・`ui\` |
 | 画面なしの自己テスト | `src\SelfTest\` |
 
@@ -50,10 +51,10 @@ StarPocket Games のランチャーアプリです（`StarPocket Client.exe`）�
 | 入っているもの | 場所 |
 |---|---|
 | インストールと修復（5 手順: Steam 版を探す → ゲームのコピー → BepInEx → MOD 本体 → 仕上げ。失敗した手順から続けられます）。コピーもダウンロードも展開もアプリ自身が行います（robocopy も PowerShell も呼びません） | `src\Core\Installer.cs`・`FileCopy.cs`・`Downloads.cs`・`ZipFiles.cs` |
-| ダウンロードは https の 4 つのホストからだけ。さらに **BepInEx の zip は、そのファイルの SHA-256 が書き留めてある値と同じかどうかを、展開する前に確かめます**。違えば消して、ゲームには何も入れません。値が書いていない版は断ります（「確認できないけれど、とりあえず入れる」はしません） | `src\AppInfo.cs`（`BepSha256`）・`src\Core\FileHash.cs`・`Installer.CheckBepZip`・**`docs\BEPINEX-PIN.md`**（値の変え方） |
+| ダウンロードは https の 5 つのホストからだけ。さらに **BepInEx の zip は、そのファイルの SHA-256 が書き留めてある値と同じかどうかを、展開する前に確かめます**。違えば消して、ゲームには何も入れません。値が書いていない版は断ります（「確認できないけれど、とりあえず入れる」はしません） | `src\AppInfo.cs`（`BepSha256`）・`src\Core\FileHash.cs`・`Installer.CheckAndExpandBep`・**`docs\BEPINEX-PIN.md`**（値の変え方） |
 | Steam 版との同期、MOD の更新の確認（GitHub Releases） | `Installer.SyncGameCopy`・`CheckUpdate`・`src\Core\ReleaseInfo.cs` |
 | `launcher-state.json` の読み書きと、今までのランチャーからの一度きりの引き継ぎ（デスクトップのショートカットの指す先から探します。元のファイルは変えません） | `src\Core\LauncherStateFile.cs`・`ShellLink.cs` |
-| 外のプログラムを起動する唯一の場所（ゲーム・`steam://` の 2 つ・Microsoft のページ・フォルダ・テキストファイル・作者へのメールだけ） | `src\Core\ShellOpen.cs` |
+| 外のプログラムを起動する唯一の場所。起動してよいのは決め打ちの一覧だけです: MOD 用のコピーの `Among Us.exe`・`steam://` の 2 つ・アプリの中に書いてある web ページ（Microsoft の WebView2 のページ・Discord の招待・製品のサイト・利用規約／プライバシーポリシー／遊び方のルールのページ。画面は名前を送るだけで、住所は渡せません）・フォルダ・テキストファイル・作者へのメール（宛先は 3 つ）・開発モードだけの `dotnet.exe`（再ビルド）・このアプリ自身（開発のスイッチを切り替えた時と、MOD 用のコピーの場所を変えた時に、引数なしで開き直すだけ） | `src\Core\ShellOpen.cs`（`AllowedSteamUrls`・`AllowedWebPages`・`AllowedMail`・`Allowed`）・web ページの名前は `src\AppInfo.cs` の `ExternalPage` |
 
 ## v0.3 の中身（報告 zip・ショートカット・アンインストール）
 
@@ -71,7 +72,7 @@ StarPocket Games のランチャーアプリです（`StarPocket Client.exe`）�
 
 **アンインストールのしかた**（2026-09-23）。窓が開いている間は、アプリ自身が自分のデータフォルダを掴んでいます（WebView2 のプロファイルとログ）。そこを消そうとすると必ず途中で止まるので、窓の中の「アンインストール」は**聞くだけ**にして、アプリを閉じたあと（WebView2 を手放したあと）に消します。コマンドからの `--uninstall` は、何も開く前に実行します（ほかの Client が動いている時とゲームが動いている時は断ります）。**アプリ自身のデータが消せなかった時は、ほかには一切触りません**（記録だけ消えて中身が残る、という中途半端な状態を作らないため）。動いている exe は自分を消せないので、アプリのフォルダは必ず残り、名前を出して知らせます。
 
-ファイルの関連付けは、どの版でも書きません。開発モードの再ビルド・ログの窓・画面なしの実行・BAN 管理は後の版です（`docs\PORT-MAP.md` の 1 章と 14.5 章）。2026-09-23 のレビューで直したことは `docs\PORT-MAP.md` の 15 章にまとめてあります。
+ファイルの関連付けは、どの版でも書きません。開発モードの再ビルド・ログの窓・画面なしの実行は、この後の v0.4 で入りました（`docs\CODE-SIGNING.md` の 5b.・8.）。BAN 管理はまだありません（`docs\PORT-MAP.md` の 1 章と 14.5 章）。2026-09-23 のレビューで直したことは `docs\PORT-MAP.md` の 15 章にまとめてあります。
 
 ## ビルド
 

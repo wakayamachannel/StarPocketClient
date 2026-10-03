@@ -40,10 +40,50 @@ namespace Starpocket.Client
             catch (Exception) { return null; }
         }
 
+        /// <summary>2026-10-01: 「ウィンドウを最小化および最大化するときにアニメーションで表示する」（システムの詳細設定 →
+        /// パフォーマンス）。最小化の「タスクバーへ縮む」動きはこちらで切れる。「アニメーション効果」とは別の設定。</summary>
+        public const int SPI_GETANIMATION = 0x0048;
+        [StructLayout(LayoutKind.Sequential)] struct ANIMATIONINFO { public uint cbSize; public int iMinAnimate; }
+        [DllImport("user32.dll", SetLastError = true)] static extern bool SystemParametersInfo(int action, int param, ref ANIMATIONINFO value, int winIni);
+
+        /// <summary>最小化の動きが ON なら true、OFF なら false。読めない時は null（＝演出しない側に倒す）。投げない。</summary>
+        public static bool? TryMinimizeAnimation()
+        {
+            var ai = new ANIMATIONINFO { cbSize = (uint)Marshal.SizeOf(typeof(ANIMATIONINFO)) };
+            try { return SystemParametersInfo(SPI_GETANIMATION, (int)ai.cbSize, ref ai, 0) ? ai.iMinAnimate != 0 : (bool?)null; }
+            catch (Exception) { return null; }
+        }
+
+        public const int SW_MINIMIZE = 6;
+        public const int WM_NCCALCSIZE = 0x0083;
+        public const int GWL_STYLE = -16;
+        public const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOZORDER = 0x0004, SWP_NOACTIVATE = 0x0010, SWP_FRAMECHANGED = 0x0020;
+        /// 2026-10-01（公開前レビュー・実測）: **32 bit の user32.dll には GetWindowLongPtrW / SetWindowLongPtrW が無い**（C の
+        /// ヘッダーで GetWindowLongW / SetWindowLongW に置き換わるマクロで、関数としては 64 bit にしか無い）。公開する exe は x86
+        /// （StarpocketClient.csproj の PlatformTarget）なので、Ptr 版だけを呼んでいた頃は EntryPointNotFoundException で毎回失敗し、
+        /// WS_CAPTION は一度も付かず（縮む・伸びる動きが無い）、✕ のたびにログに 1 行残っていた。窓のスタイルは 32 bit の値なので、
+        /// 32 bit では Long 版、64 bit では LongPtr 版を呼ぶ（<see cref="GetWindowStyle"/> / <see cref="SetWindowStyle"/>）。
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] static extern int GetWindowLong32(IntPtr hWnd, int index);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongW")] static extern int SetWindowLong32(IntPtr hWnd, int index, int value);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int index);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int index, IntPtr value);
+
+        /// <summary>窓のスタイル（GWL_STYLE）。32 bit でも 64 bit でも呼べる（上の説明）。失敗した時は投げる（呼ぶ側がログに書く）。</summary>
+        public static int GetWindowStyle(IntPtr hWnd) =>
+            IntPtr.Size == 4 ? GetWindowLong32(hWnd, GWL_STYLE) : unchecked((int)GetWindowLongPtr64(hWnd, GWL_STYLE).ToInt64());
+
+        /// <summary>窓のスタイル（GWL_STYLE）を書く。32 bit でも 64 bit でも呼べる。</summary>
+        public static void SetWindowStyle(IntPtr hWnd, int style)
+        {
+            if (IntPtr.Size == 4) SetWindowLong32(hWnd, GWL_STYLE, style);
+            else SetWindowLongPtr64(hWnd, GWL_STYLE, new IntPtr(style));
+        }
+        [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
         public const int WM_NCLBUTTONDOWN = 0x00A1;
         public const int HTCAPTION = 2;
         public const int MSGFLT_ALLOW = 1;
         public const int MONITOR_DEFAULTTONEAREST = 2;
+        public const int WS_CAPTION = 0x00C00000;
         public const int WS_MINIMIZEBOX = 0x00020000;
         public const int WS_SYSMENU = 0x00080000;
         public const int CS_DROPSHADOW = 0x00020000;

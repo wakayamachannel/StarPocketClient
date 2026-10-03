@@ -278,6 +278,50 @@ namespace Starpocket.Client.SelfTest
                 r.Check("privacy", Consent.IsValidVersion(AppInfo.PrivacyVersion));
                 r.Check("rules", Consent.IsValidVersion(AppInfo.RulesVersion));
             });
+
+            // 2026-10-02: 公開していた利用規約 第18条2項に、下書きの印の切れ端（「と同じ】」「 in Privacy Policy 3.9]」）と
+            // 作業のメモ（「（確かめました: …）」）が 3 言語とも残っていました。第11条4項3号には「公開までに直します」も。
+            // 上の試験は 1 行目と版の行しか見ないので、同じ物がまた入っても通ってしまいます。**本文を 1 行ずつ**見ます。
+            // 変更の履歴の表の行（| 1.0 | … |）は、古い文の引用（「公開までに直します」など）が残ってよいので飛ばします。
+            r.Test("同梱の文書に、下書きの印の切れ端と作業のメモが無い", () =>
+            {
+                string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\'), "ui", "legal");
+                if (!Directory.Exists(dir)) { r.Info("ui\\legal が隣にありません（そろっているかは PackageFiles が見ます）"); return; }
+                var bad = new[] {
+                    "【", "】",                                      // 日本語・中国語の印とその切れ端
+                    "[Fix", "[Check", "[Owner", "[Lawyer",           // 英語の印
+                    "（確かめました", "(Checked", "（已确认",         // 作業のメモ
+                    "（確認済", "(Verified", "（已核实",
+                    "公開までに直します", "we will fix this before release", "正式发布前会修改",   // 作業の約束
+                    "OWNER-DECISIONS", "TODO:", "FIXME",
+                };
+                var histRow = new System.Text.RegularExpressions.Regex(@"^\|\s*[0-9]+\.[0-9]+");
+                foreach (var doc in new[] { "terms", "privacy", "rules", "codes" })
+                    foreach (var lang in new[] { "ja", "zh-CN", "en" })
+                    {
+                        string p = Path.Combine(dir, doc + "." + lang + ".md");
+                        if (!File.Exists(p)) { r.Check(doc + "." + lang + ": ある", false); continue; }
+                        string[] lines = File.ReadAllLines(p, Encoding.UTF8);
+                        int hits = 0; string first = null;
+                        for (int i = 0; i < lines.Length; i++)
+                        {
+                            string l = lines[i];
+                            if (histRow.IsMatch(l)) continue;
+                            foreach (var b in bad)
+                                if (l.IndexOf(b, StringComparison.Ordinal) >= 0)
+                                {
+                                    hits++;
+                                    if (first == null) first = (i + 1) + " 行目「" + b + "」: " + (l.Length > 60 ? l.Substring(0, 60) : l);
+                                    break;
+                                }
+                            // 閉じかっこだけ残った切れ端（[ と ] の数が合わない行）
+                            int open = 0, close = 0;
+                            foreach (char c in l) { if (c == '[') open++; else if (c == ']') close++; }
+                            if (open != close) { hits++; if (first == null) first = (i + 1) + " 行目「[ と ] の数が違う」: " + (l.Length > 60 ? l.Substring(0, 60) : l); }
+                        }
+                        r.Check(doc + "." + lang + ": 切れ端とメモが無い" + (first != null ? "  <" + first + ">" : ""), hits == 0);
+                    }
+            });
         }
     }
 }

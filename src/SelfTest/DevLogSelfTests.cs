@@ -23,6 +23,7 @@ namespace Starpocket.Client.SelfTest
         {
             SizeTests(r);
             DayZipTests(r);
+            FirstCleanupTests(r);
             AsideTests(r);
             LogPageTests(r);
             BuildEntryTests(r);
@@ -313,6 +314,94 @@ namespace Starpocket.Client.SelfTest
                 Loose(gl, new DateTime(2026, 9, 2, 9, 0, 0), 100);
                 r.Equal("the second time it does nothing", 0, gl.CompressOldLogs());
                 r.Check("... and that log is still loose", File.Exists(Path.Combine(gl.LogArchiveDir, GameLogs.ArchiveName(new DateTime(2026, 9, 2, 9, 0, 0)))));
+                GameLogs.ResetZipOnce();
+            });
+        }
+
+        // ------------------------------------------------------------------ v1.1.2 直し 1: この PC で初めての起動は消さない
+        // (src\Core\FirstCleanup.cs). The events.log half is in AegisSelfTests (events.log), the settings.json key in
+        // ShellSelfTests (settings.json).
+        static void FirstCleanupTests(SelfTestRunner r)
+        {
+            r.Section("first start: no clean-up (直し 1)");
+            r.Test("the mark: none -> skip this once and write it; there -> clean up as before", () =>
+            {
+                var s = new ClientSettings();
+                int saves = 0;
+                var log = new List<string>();
+                r.Check("a new PC has no mark", !s.CleanupArmed);
+                r.Check("the first start does not clean up", !FirstCleanup.Decide(s, () => saves++, log.Add));
+                r.Check("... and writes the mark for the next start, once", s.CleanupArmed && saves == 1);
+                r.Check("... and client.log says so", log.Any(l => l.Contains("first start on this PC") && l.Contains("nothing is deleted")), string.Join(" / ", log));
+                r.Check("the next start cleans up as before", FirstCleanup.Decide(s, () => saves++, log.Add));
+                r.Check("... and writes nothing", saves == 1);
+
+                string d = r.NewDir("firstclean");
+                string p = Path.Combine(d, @"StarPocket\Client\settings.json");
+                var a = ClientSettings.Load(p);
+                r.Check("through the real settings.json: the first start skips", !FirstCleanup.Decide(a, () => a.Save(p), null));
+                r.Check("... the file now holds cleanupArmed:true", File.Exists(p) && File.ReadAllText(p).Contains("\"cleanupArmed\":true"), File.Exists(p) ? File.ReadAllText(p) : "no file");
+                r.Check("... and the next start (a fresh load) cleans up without writing",
+                    FirstCleanup.Decide(ClientSettings.Load(p), () => { throw new InvalidOperationException("must not write"); }, null));
+            });
+
+            r.Test("the mark cannot be written: the next start skips too", () =>
+            {
+                var s = new ClientSettings();
+                var log = new List<string>();
+                r.Check("skipped", !FirstCleanup.Decide(s, () => { throw new IOException("disk full"); }, log.Add));
+                r.Check("the mark is not kept, so the next start deletes nothing either", !s.CleanupArmed);
+                r.Check("... and client.log says why", log.Any(l => l.Contains("disk full")), string.Join(" / ", log));
+                r.Check("no settings at all: nothing is deleted", !FirstCleanup.Decide(null, null, null));
+            });
+
+            r.Test("the first start deletes nothing; the next start cleans up as before", () =>
+            {
+                string g = r.NewDir("firstcleanlogs");
+                var log = new List<string>();
+                var gl = NewLogs(g, log);
+                var now = new DateTime(2026, 10, 1, 12, 0, 0);
+                gl.Now = () => now;
+                GameLogs.ResetZipOnce();
+                string old = Loose(gl, now.AddDays(-40), 100);    // past the 30 days
+                string week = Loose(gl, now.AddDays(-8), 100);    // past the 7 days (a day zip)
+                string rep = SelfTestRunner.Touch(Path.Combine(gl.Desktop, "PocketRoles-report-" + now.AddDays(-31).ToString("yyyyMMdd-HHmm") + ".zip"));
+                string ev = SelfTestRunner.Touch(Path.Combine(gl.Desktop, "PocketRoles-evidence-" + now.AddDays(-31).ToString("yyyyMMdd-HHmm") + ".zip"));
+                SelfTestRunner.Touch(gl.LogPath, "[Info] the last game\r\n");
+                File.SetLastWriteTime(gl.LogPath, now.AddHours(-2));
+                string kept = Path.Combine(gl.LogArchiveDir, GameLogs.ArchiveName(now.AddHours(-2)));
+
+                FirstCleanup.Housekeep(gl, false, true);
+                r.Check("first start: the log 40 days old is still there", File.Exists(old));
+                r.Check("first start: the log 8 days old is still loose (no day zip)", File.Exists(week) && Directory.GetFiles(gl.LogArchiveDir, "*.zip").Length == 0);
+                r.Check("first start: the report zip and the one-player zip 31 days old are still on the Desktop", File.Exists(rep) && File.Exists(ev));
+                r.Check("first start: the last game's log is still copied into logs (and left where it was)", File.Exists(kept) && File.Exists(gl.LogPath));
+
+                FirstCleanup.Housekeep(gl, true, true);
+                r.Check("next start: the log 40 days old goes", !File.Exists(old));
+                r.Check("next start: the report zip and the one-player zip go", !File.Exists(rep) && !File.Exists(ev));
+                r.Check("next start: the log 8 days old goes into its day zip",
+                    !File.Exists(week) && File.Exists(Path.Combine(gl.LogArchiveDir, "logs-" + now.AddDays(-8).ToString("yyyyMMdd") + ".zip")));
+                r.Check("next start: the copy of the last game's log stays", File.Exists(kept));
+                GameLogs.ResetZipOnce();
+            });
+
+            r.Test("--action: the same mark, never a day zip", () =>
+            {
+                string g = r.NewDir("firstcleanaction");
+                var log = new List<string>();
+                var gl = NewLogs(g, log);
+                var now = new DateTime(2026, 10, 1, 12, 0, 0);
+                gl.Now = () => now;
+                GameLogs.ResetZipOnce();
+                string old = Loose(gl, now.AddDays(-40), 100);
+                string week = Loose(gl, now.AddDays(-8), 100);
+                FirstCleanup.Housekeep(gl, false, false);
+                r.Check("not opened on this PC yet: nothing deleted", File.Exists(old) && File.Exists(week));
+                FirstCleanup.Housekeep(gl, true, false);
+                r.Check("opened before: the 30 days apply", !File.Exists(old));
+                r.Check("... and no day zip (as before for --action)", File.Exists(week) && Directory.GetFiles(gl.LogArchiveDir, "*.zip").Length == 0);
+                FirstCleanup.Housekeep(null, true, true);   // nothing to work on: never throws
                 GameLogs.ResetZipOnce();
             });
         }

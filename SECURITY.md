@@ -24,7 +24,7 @@
 
 ### たとえば、こんなこと
 
-- 決められた 4 つのホスト（`api.github.com`・`github.com`・`objects.githubusercontent.com`・`builds.bepinex.dev`）以外からファイルを取らせる方法
+- 決められた 5 つのホスト（`api.github.com`・`github.com`・`objects.githubusercontent.com`・`release-assets.githubusercontent.com`・`builds.bepinex.dev`）以外からファイルを取らせる方法
 - BepInEx の zip の SHA-256 の確認をすり抜けて、別のファイルをゲームのフォルダーに入れる方法
 - 偽の Aegis の定義ファイル（署名の確認をすり抜ける、古い版に戻す）
 - `src\Core\ShellOpen.cs` の一覧に無いものを起動させる方法（シェル・スクリプト・別の exe）
@@ -62,7 +62,7 @@ Tell us what happens, how to make it happen, which version of `StarPocket Client
 log or a report zip if you have one. **Never send keys, passwords or Discord webhook URLs** - where you found a secret
 is enough.
 
-Things we very much want to hear about: getting the app to fetch from a host outside its four-host allow-list; getting a
+Things we very much want to hear about: getting the app to fetch from a host outside its five-host allow-list; getting a
 file past the pinned SHA-256 of the BepInEx zip; a forged or rolled-back Aegis definitions file; getting anything
 started that is not on the list in `src/Core/ShellOpen.cs`; getting the uninstall to delete outside its allowed paths; a
 friend code, PUID, key or webhook URL surviving in a report zip or in the app's log; loading anything but

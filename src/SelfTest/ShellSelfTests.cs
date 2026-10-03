@@ -100,6 +100,20 @@ namespace Starpocket.Client.SelfTest
                 r.Equal("argument first", @"X:\Arg", GameFolders.ResolveModded(i));
                 i = I(); i.EnvGameDir = @"Y:\Env"; i.DevMode = true;
                 r.Equal("POCKETROLES_GAMEDIR next", @"Y:\Env", GameFolders.ResolveModded(i));
+                // 2026-10-01: the folder chosen in Settings (copyDir) comes after the two set by hand, before everything else
+                i = I(); i.GameDirArg = @"X:\Arg"; i.EnvGameDir = @"Y:\Env"; i.SettingCopyDir = @"Z:\Set\Among Us PocketRoles";
+                r.Equal("copyDir: the argument still wins", @"X:\Arg", GameFolders.ResolveModded(i));
+                i = I(); i.EnvGameDir = @"Y:\Env"; i.SettingCopyDir = @"Z:\Set\Among Us PocketRoles";
+                r.Equal("copyDir: POCKETROLES_GAMEDIR still wins", @"Y:\Env", GameFolders.ResolveModded(i));
+                i = I(); i.SettingCopyDir = @"Z:\Set\Among Us PocketRoles"; i.EnvOneDrive = Path.Combine(root, "User");
+                r.Equal("copyDir: before the Desktop and the OneDrive rule (friend mode)", @"Z:\Set\Among Us PocketRoles", GameFolders.ResolveModded(i));
+                // 公開前レビュー 2026-10-01: 開発モードでは copyDir を使わない（「再ビルド」の DLL はソースの隣のコピーにしか入らない）
+                i = I(); i.SettingCopyDir = @"Z:\Set\Among Us PocketRoles"; i.DevMode = true; i.EnvOneDrive = Path.Combine(root, "User");
+                r.Equal("copyDir: ignored in developer mode (no copy next to Src -> Desktop, OneDrive ignored)", Path.Combine(desk, "Among Us PocketRoles"), GameFolders.ResolveModded(i));
+                r.Equal("copySource: arg / env / setting / default", "arg|env|setting|default",
+                    CopyPlace.Source("a", "e", "s", false) + "|" + CopyPlace.Source(null, "e", "s", false) + "|" + CopyPlace.Source("", "", "s", false) + "|" + CopyPlace.Source(null, null, "", false));
+                r.Equal("copySource: developer mode -> a copyDir left in settings.json is not the source (default); arg / env still are", "default|arg|env",
+                    CopyPlace.Source(null, null, "s", true) + "|" + CopyPlace.Source("a", "e", "s", true) + "|" + CopyPlace.Source(null, "e", "s", true));
 
                 i = I(); i.DevMode = true;
                 r.Equal("developer: no copy next to Src -> Desktop", Path.Combine(desk, "Among Us PocketRoles"), GameFolders.ResolveModded(i));
@@ -383,6 +397,25 @@ namespace Starpocket.Client.SelfTest
             r.Equal("developer: not installed is not asked", "ready", C(true, Info(false, false, true, null), null).PState);
             r.Equal("blocked by the last pre-launch scan", "blocked", C(false, full, "2026.8.18", blocked: true).PState);
             r.Equal("blocked never hides install", "install", C(false, Info(false, true, true, null), null, blocked: true).PState);
+
+            // 2026-10-01（公開前レビューで見つかった穴）: BepInEx がゲームと種類違い（32bit / 64bit）。
+            // 版の文字列は x86 の zip も x64 の zip も同じ 6.0.0-be.735 なので、BepOk では区別が付かない。
+            // ここを見ていなかったせいで、2026.9.29 で 64bit になった人の画面が「ready・プレイ」のまま、
+            // MOD だけがエラーも出さずに動かない状態になっていた。**その人は修復にすら辿り着けなかった。**
+            var archBad = Info(true, true, true, "2026.8.18"); archBad.BepArchBad = true;
+            var ab = C(false, archBad, "2026.8.18");
+            r.Equal("BepInEx がゲームと種類違い -> repair", "repair", ab.PState);
+            r.Equal("... どの修復かを名乗る", "bep", ab.Repair);
+            r.Equal("... 専用の警告文", "al_repair_bep", ab.WarnKey);
+            // ゲームの版が古いこと（sync）より重い: 版が合っていても MOD が 1 度も読み込まれないため
+            r.Equal("種類違いは sync より先に出る", "repair", C(false, archBad, "2026.9.29").PState);
+            r.Equal("... その時も bep の修復", "bep", C(false, archBad, "2026.9.29").Repair);
+            // 開発モードでも同じ（再ビルドより先に知らせる）
+            r.Equal("開発モードでも種類違いが先", "repair", C(true, archBad, "2026.8.18", "2026.1.1").PState);
+            // **既定値は「問題なし」** — Read を通らずに作られた InstallInfo が勝手に repair にならないこと。
+            // 逆向き（BepArch=true が正常）にすると、検査の作り物が全部 repair になる（実際に 15 件落ちた）。
+            r.Check("既定では種類違いと決めつけない", !new InstallInfo().BepArchBad);
+            r.Equal("だから作り物の InstallInfo は今までどおり", "ready", C(false, full, "2026.8.18").PState);
             r.Test("install info from files", () =>
             {
                 string g = r.NewDir("install");
@@ -473,6 +506,19 @@ namespace Starpocket.Client.SelfTest
                 r.Check("read back", ClientSettings.Load(p).TrayHintShown);
                 File.WriteAllText(p, "{\"close\":\"tray\",\"trayHintShown\":\"yes\"}");
                 r.Check("not a true -> not shown yet", !ClientSettings.Load(p).TrayHintShown);
+
+                // v1.1.2 直し 1: 初めての起動の印（src\Core\FirstCleanup.cs）。無い間は起動の片づけをしない
+                var s5 = new ClientSettings();
+                r.Check("cleanupArmed: not armed by default (the first start deletes nothing)", !s5.CleanupArmed);
+                s5.Save(p);
+                r.Check("cleanupArmed: not written while not armed", !File.ReadAllText(p).Contains("cleanupArmed"));
+                s5.CleanupArmed = true;
+                s5.Save(p);
+                r.Equal("cleanupArmed: written once armed", "{\"close\":\"tray\",\"lang\":\"auto\",\"cleanupArmed\":true}", File.ReadAllText(p));
+                r.Check("cleanupArmed: read back", ClientSettings.Load(p).CleanupArmed);
+                File.WriteAllText(p, "{\"close\":\"tray\",\"cleanupArmed\":\"yes\"}");
+                r.Check("cleanupArmed: not a true -> not armed", !ClientSettings.Load(p).CleanupArmed);
+                r.Check("cleanupArmed: the page cannot set it", !Bridge.SettingKeys.Contains("cleanupArmed"));
             });
             // v0.1.1: Settings → PocketRoles → 起動するゲーム (the owner, 2026-09-23). Kept where the app keeps its settings
             // (settings.json in %LOCALAPPDATA%\StarPocket\Client, written by the app itself), not in the page's storage.
@@ -592,6 +638,35 @@ namespace Starpocket.Client.SelfTest
                 r.Equal("the start scan runs with the window up (the old tray quit): live", "live", ClientApp.ScanCardPlan("start", false, true, true));
                 r.Equal("the setting off: no card while the window is on screen (v0.4)", "none|none", ClientApp.ScanCardPlan("start", false, false, false) + "|" + ClientApp.ScanCardPlan("start", false, true, false));
                 r.Equal("scan again / scan only / pre-launch with the window up: the panel shows them", "none|none|none", ClientApp.ScanCardPlan("rescan", false, true, true) + "|" + ClientApp.ScanCardPlan("scanOnly", false, true, true) + "|" + ClientApp.ScanCardPlan("prelaunch", false, true, true));
+                // 2026-10-01: the app's own scan after the mod's copy changed never touches the card (no card while the
+                // window is away, and a red start card that waits for a click is not closed by it)
+                r.Check("the automatic scan leaves the card alone; every other kind does not",
+                    ClientApp.ScanCardIgnores(AegisAutoScan.Kind) && !ClientApp.ScanCardIgnores("start") && !ClientApp.ScanCardIgnores("prelaunch")
+                    && !ClientApp.ScanCardIgnores("rescan") && !ClientApp.ScanCardIgnores("scanOnly") && !ClientApp.ScanCardIgnores("") && !ClientApp.ScanCardIgnores(null));
+                // ... except that an automatic scan that ends with no red row closes a card that has finished (the start's red
+                // card), so the card never stays red while the tray, the badge and the panel are green (review 2026-10-01)
+                r.Check("auto scan, done, green: a finished card closes",
+                    ClientApp.AutoScanClosesCard(AegisAutoScan.Kind, "done", 0, true, "done"));
+                r.Check("... not while red, not while it runs, not a card still scanning, not without a card, not another kind",
+                    !ClientApp.AutoScanClosesCard(AegisAutoScan.Kind, "done", 1, true, "done") && !ClientApp.AutoScanClosesCard(AegisAutoScan.Kind, "scanning", 0, true, "done")
+                    && !ClientApp.AutoScanClosesCard(AegisAutoScan.Kind, "done", 0, true, "scanning") && !ClientApp.AutoScanClosesCard(AegisAutoScan.Kind, "done", 0, false, "done")
+                    && !ClientApp.AutoScanClosesCard("rescan", "done", 0, true, "done"));
+                // 2026-10-01: 設定 → Among Us の場所 →「場所を変える」
+                r.Check("moveCopy is a command the app answers, and it waits for other long tasks",
+                    Bridge.Supported.Contains("moveCopy") && Bridge.BusyGated.Contains("moveCopy"));
+                r.Test("copyDir: written only when set, read back as it was", () =>
+                {
+                    string dir = r.NewDir("copydir-settings");
+                    string p = Path.Combine(dir, "settings.json");
+                    var s = new ClientSettings();
+                    s.Save(p);
+                    r.Check("not written while empty", !File.ReadAllText(p).Contains("copyDir"));
+                    s.SetCopyDir(@"D:\Games\Among Us PocketRoles");
+                    s.Save(p);
+                    r.Equal("read back", @"D:\Games\Among Us PocketRoles", ClientSettings.Load(p).CopyDir);
+                    File.WriteAllText(p, "{\"copyDir\":5}");
+                    r.Equal("a number is not a folder", "", ClientSettings.Load(p).CopyDir);
+                });
                 // the headline of a scan that is not the pre-launch one and found a red row
                 r.Equal("headline: found (ja)", "見つかりました — 赤い項目 2 件を直してください", AegisText.Get("ja", "found", 2));
                 r.Equal("headline: found (zh-CN / en)", "有发现 — 请处理 2 个红色项目|Found — fix the 2 red row(s)", AegisText.Get("zh-CN", "found", 2) + "|" + AegisText.Get("en", "found", 2));
@@ -1196,6 +1271,56 @@ namespace Starpocket.Client.SelfTest
             // (g) what the page is told
             r.Equal("the closing event's JSON", "{\"type\":\"event\",\"name\":\"window\",\"data\":{\"closing\":true,\"ms\":140}}",
                 Bridge.EventJson("window", new Dictionary<string, object> { ["closing"] = true, ["ms"] = 140 }));
+
+            // (h) 2026-10-01 (the owner's screen recording: 「クライアントの閉じられ方が消えてみたい」): to the tray by Windows' own
+            // minimize animation (the window shrinks into the taskbar), then hidden - the fade only where that cannot be shown
+            r.Equal("leave: on screen, both animations on -> the minimize animation", "minimize", CloseFade.PlannedLeave(true, false, true, true));
+            r.Equal("leave: the minimize animation off or unreadable -> the v1.2 fade", "fade|fade", CloseFade.PlannedLeave(true, false, true, false) + "|" + CloseFade.PlannedLeave(true, false, true, null));
+            r.Equal("leave: already minimised (nothing left to shrink) -> the fade", "fade", CloseFade.PlannedLeave(true, true, true, true));
+            r.Equal("leave: animations off or unreadable -> at once, whatever the minimize setting", "none|none", CloseFade.PlannedLeave(true, false, false, true) + "|" + CloseFade.PlannedLeave(true, false, null, true));
+            r.Equal("leave: not on screen -> at once", "none|none", CloseFade.PlannedLeave(false, false, true, true) + "|" + CloseFade.PlannedLeave(false, true, true, true));
+            r.Check("the hold outlasts Windows' shrink (about 250 ms) and stays short", CloseFade.MinimizeHoldMs >= 260 && CloseFade.MinimizeHoldMs <= 500, CloseFade.MinimizeHoldMs.ToString());
+            r.Check("MainForm has LeaveToTray", typeof(MainForm).GetMethod("LeaveToTray") != null);
+            // (i) 公開前レビュー 2026-10-01: 「最小化してから Hide()」でしまった窓を、ゲームの後でフォーカスを取らずに戻すと、Visible が
+            // false のまま残った。MainForm.ShowNoActivate が SW_SHOWNOACTIVATE の後で、アクティブにしない Show() で印を戻す
+            // （窓の動きそのものは見えない窓の試験で確かめる。ここは窓を作らない）
+            var swa = typeof(MainForm).GetProperty("ShowWithoutActivation", BindingFlags.NonPublic | BindingFlags.Instance);
+            r.Check("MainForm overrides ShowWithoutActivation, has NoActivate and ShowNoActivate",
+                swa != null && swa.DeclaringType == typeof(MainForm) && typeof(MainForm).GetField("NoActivate") != null && typeof(MainForm).GetMethod("ShowNoActivate") != null);
+            // (j) 公開前レビュー 2026-10-01: 縮む 0.3 秒の間に「終了」が来て、その後で人が窓を戻した（演出ごと取りやめ）
+            r.Test("a leave cancelled after a quit joined it: closing and quitFading both go back", () =>
+            {
+                bool closing = true, quitFading = true;
+                ClientApp.AfterFadeCancelled(ref closing, ref quitFading);
+                r.Check("both false (the tray's open / quit work again)", !closing && !quitFading);
+            });
+            r.Equal("the window comes back after a game: only when the app is not quitting or fading out to quit", "True|False|False|False",
+                ClientApp.ComesBackAfterGame(false, false) + "|" + ClientApp.ComesBackAfterGame(true, false) + "|" + ClientApp.ComesBackAfterGame(false, true) + "|" + ClientApp.ComesBackAfterGame(true, true));
+            r.Test("Native.TryMinimizeAnimation does not throw", () =>
+            {
+                bool? v = Native.TryMinimizeAnimation();
+                r.Check("answered: " + (v.HasValue ? v.Value.ToString() : "null"), true);
+            });
+            // (k) 公開前レビュー（2 回目）2026-10-01: 32 bit の user32.dll には GetWindowLongPtrW / SetWindowLongPtrW が無い。公開する exe は
+            // x86 なので、MainForm.EnsureCaptionStyle は ✕ のたびに EntryPointNotFoundException で失敗し、WS_CAPTION（縮む・伸びる動き）は
+            // 一度も付いていなかった。この自己診断は公開する exe そのものの中で走るので、ここで本当に読み書きできるかを見る。
+            // 使うのは「メッセージ専用の窓」（親が HWND_MESSAGE）: 画面に出せない種類の窓で、何も見えない
+            r.Test("the window style can be read and written in THIS process (32-bit: GetWindowLongW, 64-bit: GetWindowLongPtrW)", () =>
+            {
+                r.Info("this process is " + (IntPtr.Size * 8) + "-bit");
+                var w = new System.Windows.Forms.NativeWindow();
+                w.CreateHandle(new System.Windows.Forms.CreateParams { Parent = new IntPtr(-3) });   // HWND_MESSAGE
+                try
+                {
+                    int s0 = Native.GetWindowStyle(w.Handle);
+                    Native.SetWindowStyle(w.Handle, s0 | Native.WS_CAPTION);
+                    int s1 = Native.GetWindowStyle(w.Handle);
+                    r.Check("WS_CAPTION is put on and read back (no EntryPointNotFoundException)", (s1 & Native.WS_CAPTION) == Native.WS_CAPTION, s0.ToString("X8") + " -> " + s1.ToString("X8"));
+                    Native.SetWindowStyle(w.Handle, s0);
+                    r.Check("... and taken off again", (Native.GetWindowStyle(w.Handle) & Native.WS_CAPTION) == (s0 & Native.WS_CAPTION));
+                }
+                finally { w.DestroyHandle(); }
+            });
         }
 
         // ------------------------------------------------------------------ strings
@@ -1529,8 +1654,9 @@ namespace Starpocket.Client.SelfTest
                 if (!File.Exists(js) || !File.Exists(index)) { r.Fail("ui files", "host-v01.js or index.html missing"); return; }
                 string g = File.ReadAllText(js, Encoding.UTF8), html = File.ReadAllText(index, Encoding.UTF8);
                 // A: パッチノートのタブでは hero が「プレイの帯」にたたまれ、売り文句とカードは出ない。プレイの行は両方のタブに残る
+                // 2026-10-01: view-game は起動時に隠れている（起動したらホーム。下の「起動時はホーム」のテスト）
                 r.Check("どのタブかは <section id=\"view-game\"> の data-tab に書き、変わった時は一番上へ戻す",
-                    html.Contains("<section class=\"view\" id=\"view-game\" aria-labelledby=\"gameTitle\" data-tab=\"ov\">")
+                    html.Contains("<section class=\"view\" id=\"view-game\" aria-labelledby=\"gameTitle\" data-tab=\"ov\" hidden>")
                     && html.Contains("if (view.dataset.tab !== tabKey) { view.dataset.tab = tabKey; view.scrollTop = 0; }"));
                 r.Check("パッチノートでは売り文句とカードが消え、hero はたたまれる（CSS）",
                     html.Contains("#view-game[data-tab=\"pn\"] .hero-copy,#view-game[data-tab=\"pn\"] .media-col{display:none}")
@@ -1558,6 +1684,10 @@ namespace Starpocket.Client.SelfTest
                     && !html.Contains("sound.play('start')") && !html.Contains("sound.play('play')"));
                 r.Check("鳴らすのはアプリ: aegis イベントの scan 番号が進んで赤だった時に 1 回",
                     g.Contains("window.spSound.play('found')") && g.Contains("if (scan > lastScan) {") && g.Contains("d.phase === 'done' && (d.serious || 0) > 0"));
+                // 2026-10-01: 自動のスキャン（MOD のコピーが変わった時）は同じ赤を何度も見つけ直すので、赤に変わった時だけ鳴らす
+                r.Check("自動のスキャンは赤が「増えた」時だけ鳴らす（同じ赤では鳴らし直さない・1 → 2 は鳴らす）",
+                    g.Contains("const fresh = d.kind !== '" + AegisAutoScan.Kind + "' || (d.serious || 0) > lastRed;")
+                    && g.Contains("if (!aegisFirst && fresh && scan > 0 && d.phase === 'done'") && g.Contains("lastRed = d.serious || 0;"));
                 r.Check("入切と音量はアプリの settings.json が勝つ（shell イベント）",
                     g.Contains("if (typeof d.sound === 'boolean' && H.prefs.sound !== d.sound) { H.prefs.sound = d.sound; H.savePrefs(); H.refreshSettings(); }")
                     && g.Contains("H.prefs.volume = d.volume;"));
@@ -1569,6 +1699,51 @@ namespace Starpocket.Client.SelfTest
                 }
                 string[] one = { "'set.sndD':'Aegis が見つけた時の 1 つだけ。", "'set.sndD':'只有 1 个：Aegis 有发现时。", "'set.sndD':'Only one: when Aegis finds something." };
                 r.Check("音の説明は「1 つだけ」（ja / zh-CN / en）", one.All(html.Contains), string.Join(" ", one.Where(x => !html.Contains(x))));
+            });
+            // 2026-10-01（持ち主「クライアント起動していきなり MOD のところ開く必要ある？ホームが標準じゃダメ？」）: 起動したらホーム。
+            // 前はページが自分の保存（sp.sample）を見て、入っている PC では 2 回目の起動から必ず MOD の画面で開いていた。
+            // ここは出荷する ui\index.html にそれが入っているかだけを見る（動きは tools\uitest）。
+            r.Test("the UI: 起動時はホーム、ホームの中身は本物 (2026-10-01)", () =>
+            {
+                string index = Path.Combine(ui, "index.html");
+                if (!File.Exists(index)) { r.Fail("ui files", "index.html missing"); return; }
+                string html = File.ReadAllText(index, Encoding.UTF8);
+                r.Check("起動の最後は show('home')（保存された状態を見て MOD の画面にしない）",
+                    html.Contains("\nshow('home');\nrunSplash();\n") && !html.Contains("show(sample.state === 'none' ? 'home' : 'game');"));
+                r.Check("最初の画面はホーム: view-home は隠れていない・view-game は隠れている・current は home",
+                    html.Contains("<section class=\"view\" id=\"view-home\" aria-labelledby=\"homeTitle\">")
+                    && html.Contains("<section class=\"view\" id=\"view-game\" aria-labelledby=\"gameTitle\" data-tab=\"ov\" hidden>")
+                    && html.Contains("let current = 'home';"));
+                r.Check("レールのホームのボタンが最初から「今のページ」",
+                    html.Contains("data-view=\"home\" data-tipkey=\"nav.home\" aria-current=\"page\""));
+                r.Check("初めてのインストール・プレイ・アップデートは今までどおり MOD の画面へ",
+                    html.Contains("'install': () => { closeAll(); show('game');") && html.Contains("'play': () => { closeAll(); show('game');")
+                    && html.Contains("'playUpdate': () => { closeAll(); show('game');") && html.Contains("setup: () => { finishSplash(); setSampleState('none'); setPstate('install'); show('game'); runInstall(); },"));
+                r.Check("ホームの大きな札に版の番号・準備中の見本が無い",
+                    !html.Contains("home.eyebrow") && !html.Contains("PocketRoles v0.5.5 · ") && html.Contains("<span class=\"home-state num\" id=\"homeState\" hidden></span>"));
+                // 2026-10-01（持ち主: MOD v0.5.6 と Client v1.1.2 は同じ日に一緒に出す）: 一番上は v0.5.6 の行。公開時刻は公開の日まで
+                // 分からないので、design\launcher-proto\index.html の 1 行（const V056_AT）だけを公開の日に直す。ここはその 1 行から
+                // 期待を作るので、公開の日に直さなくてよい。null の間は INFO で知らせる（お知らせとパッチノートは「準備中」と出る）
+                var at056 = System.Text.RegularExpressions.Regex.Match(html, @"\nconst V056_AT = (null|'(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)');\n");
+                r.Check("お知らせ: v0.5.6 の公開時刻は 1 行だけ（null か、秒まである UTC。GitHub の published_at の形）",
+                    at056.Success && System.Text.RegularExpressions.Regex.Matches(html, "const V056_AT = ").Count == 1,
+                    at056.Success ? at056.Groups[1].Value : "no const V056_AT line of that form");
+                if (at056.Success && at056.Groups[2].Success)
+                    r.Check("お知らせ: v0.5.6 の公開時刻は v0.5.5（2026-09-23T10:00:09Z）より後", string.CompareOrdinal(at056.Groups[2].Value, "2026-09-23T10:00:09Z") > 0, at056.Groups[2].Value);
+                else
+                    r.Info("【公開の日に直す】v0.5.6 の公開時刻がまだ入っていません: design\\launcher-proto\\index.html の「const V056_AT = null;」に GitHub の published_at を入れ、tools\\import-ui.ps1 で ui を作り直す（今はお知らせとパッチノートが「準備中」）");
+                r.Check("お知らせ: 一番上は v0.5.6（時刻は V056_AT・パッチノートあり）、v0.5.5 は GitHub の公開時刻のままでボタンではない、「時刻は見本」の札と「（プロトタイプ）」のトーストは無い",
+                    html.Contains("{ at:V056_AT, v:'v0.5.6', notes:true,") && html.Contains("{ at:'2026-09-23T10:00:09Z', v:'v0.5.5', t:")
+                    && !html.Contains("home.newsSample") && !html.Contains("else toast(t('toast.proto', { x: n.v"));
+                r.Check("パッチノート: v0.5.6 を 3 言語で（NOTES）、札は時刻がある時だけ「公開済み」・無い間は「準備中」（未公開・作業中の語も、日本語だけの断りも無い）",
+                    html.Contains("const NOTES = { v:'v0.5.6', groups:[") && html.Contains("pill.textContent = t(out ? 'notes.out' : 'news.prep');")
+                    && !html.Contains("notes.unreleased") && !html.Contains("notes.jaOnly") && !html.Contains("id=\"notesLangNote\""));
+                foreach (var key in new[] { "home.title", "home.body", "home.more", "news.prep", "news.next", "mod.subNone0", "notes.out", "notes.lead" })
+                {
+                    int n = 0, i = 0;
+                    while ((i = html.IndexOf("'" + key + "':'", i, StringComparison.Ordinal)) >= 0) { n++; i++; }
+                    r.Check("'" + key + "' in all 3 languages", n == 3, n + " found");
+                }
             });
             // v1.2（持ち主 2026-09-24「× 押したときの挙動が落ちた感じ」）: 窓は MainForm.FadeOut で薄くなり、ページは host-v01.js で
             // ほんの少し縮む（"window" イベントの closing / ms）。ここは出荷する UI のファイルにその受け口があること、数がアプリの

@@ -53,6 +53,8 @@ const X = {
     'v03.reporting': '報告 zip を作成中...',
     'v03.exporting': 'その人の証拠の zip を作っています...',
     'v03.close': '閉じる',
+    /* 2026-10-01: MOD 用のコピーを別のドライブへ写している間（ClientApp.DoMoveCopy の "progress" task moveCopy） */
+    'v12.moving': 'MOD 用のコピーを移しています... {p}%（終わるとアプリを開き直します）',
     /* v0.4: the log page and the developer tools. Everything the page SHOWS comes from the app in the app's own three
        languages; these are only the words this file needs before an answer has arrived. */
     'v04.logTitle': '進行ログ',
@@ -94,6 +96,7 @@ const X = {
     'v03.reporting': '正在生成报告 zip...',
     'v03.exporting': '正在生成此人的证据 zip...',
     'v03.close': '关闭',
+    'v12.moving': '正在移动模组用副本... {p}%（完成后会重新打开应用）',
     'v04.logTitle': '运行日志',
     'v04.logNone': '还没有记录。',
     'toast.launched': '已启动。左上角显示 "PocketRoles v..." 即表示 mod 生效。',
@@ -130,6 +133,7 @@ const X = {
     'v03.reporting': 'Creating the report zip...',
     'v03.exporting': "Creating the zip of that player's evidence...",
     'v03.close': 'Close',
+    'v12.moving': 'Moving the mod copy... {p}% (the app opens again when it is done)',
     'v04.logTitle': 'Task log',
     'v04.logNone': 'Nothing recorded yet.',
     'lib.notRunning': 'not running',
@@ -597,6 +601,8 @@ function applyPaths(){
     const want = livePaths.steamDir || (livePaths.steamFound === false ? H.t('lib.notFound') : livePaths.steamFound ? H.t('v10.steamFound') : '');
     if (p.textContent !== want) p.textContent = want;   /* only on a change: the observer below must not loop */
   }
+  /* 2026-10-01: インストール前の行（「まだありません ここに作ります:」）にも同じ #set-copy-path がある。どちらの行でも、
+     アプリが決めた MOD 用のコピーの場所（StatusData の modDir）を出す */
   const c = document.getElementById('set-copy-path');
   if (c && c.tagName === 'CODE' && c.textContent !== livePaths.modDir) c.textContent = livePaths.modDir;
 }
@@ -631,8 +637,16 @@ on('game', d => {
    持ち主は 2026-09-24 に「起動の音とかは要らない。アンチチートで見つかった時だけやる」と決めました。
    WebView2 がページを自分で読み直した時も、これで昔の赤い結果を鳴らし直しません。
    起動時のスキャンで見つかった分は、窓が出た時にカードで知らせています（ClientApp.ShowWaitingStartCard）ので、取りこぼしません。
-   鳴らす本体は index.html の spSound（入切と音量はそちらが見る） */
+   鳴らす本体は index.html の spSound（入切と音量はそちらが見る）
+
+   2026-10-01: アプリが自分で走らせるスキャン（kind 'auto'、MOD のコピーが変わった時。ClientApp.QueueAutoScan）は、
+   **赤が「増えた」時だけ**鳴らす（lastRed: 直前に終わったスキャンの赤の数）。自動のスキャンは同じ赤を何度も見つけ直す
+   （ゲームのたびに設定ファイルが書かれる等）ので、そのたびに鳴らすと「見つかった」の音の意味が無くなる。
+   赤が残っている間に別の赤が増えた時は鳴らす（公開前レビューの指摘: 0 → 1 の時しか鳴らず、1 → 2 を取りこぼしていた）。
+   人が押したスキャン（もう一度スキャン・プレイ前）は今までどおり、赤なら毎回鳴らす。
+   イベントの serious は、どの段階（scanning / done）でも「scan 番目に終わったスキャン」の赤の数なので、番号が進んだ時に覚える。 */
 let lastScan = -1;
+let lastRed = 0;
 let aegisFirst = true;
 on('aegis', d => {
   aegisData = d;
@@ -640,10 +654,19 @@ on('aegis', d => {
   H.renderChecks(); H.renderAegisLog();
   const scan = Number.isInteger(d.scan) ? d.scan : -1;
   if (scan > lastScan) {
-    if (!aegisFirst && scan > 0 && d.phase === 'done' && (d.serious || 0) > 0 && window.spSound) { try { window.spSound.play('found'); } catch (err) {} }
+    const fresh = d.kind !== 'auto' || (d.serious || 0) > lastRed;
+    if (!aegisFirst && fresh && scan > 0 && d.phase === 'done' && (d.serious || 0) > 0 && window.spSound) { try { window.spSound.play('found'); } catch (err) {} }
     lastScan = scan;
+    lastRed = d.serious || 0;
   }
   aegisFirst = false;
+});
+/* 2026-10-01: MOD 用のコピーを移している間（設定 → 場所を変える。ClientApp.DoMoveCopy）。ページに進み具合の欄は無いので、
+   トーストで知らせる（3.6 秒で消えるので、届くたびに出し直す。同じドライブなら一瞬で 100% になる） */
+on('progress', d => {
+  if (d.task !== 'moveCopy') return;
+  const p = Math.max(0, Math.min(100, Math.round((Number(d.value) || 0) * 100)));
+  H.toast(tv('v12.moving', { p }));
 });
 on('progress', d => {
   if (d.task !== 'rescan' && d.task !== 'scanOnly') return;   /* prelaunch: the play button's own handler */
@@ -691,7 +714,11 @@ function clearDialog(){
   if (dlgCancel) dlgCancel.hidden = false;
 }
 
-function showDialog({ title, body, yes, danger = true, extra = null, then = null, onlyClose = false }){
+/* over: the dialog opens ON TOP of what is open (the layer stack of the page), instead of closing everything first.
+   2026-10-01（公開前レビュー 2 回目）: 「場所を変える」の断り（「OneDrive の中には置けません…別のフォルダを選んでください」）を
+   閉じると、設定ごと閉じていて、言われたとおり選び直すには 設定 → PocketRoles → 場所 を開き直す必要があった。設定の上に出せば、
+   閉じた時に元の設定の同じ所へ戻る（ページ自身の確認 confirmDlg と同じ重ね方） */
+function showDialog({ title, body, yes, danger = true, extra = null, then = null, onlyClose = false, over = false }){
   if (!dlg.title) return;
   clearDialog();
   dlg.title.textContent = title || '';
@@ -703,7 +730,8 @@ function showDialog({ title, body, yes, danger = true, extra = null, then = null
   if (extra) { dlgExtra = extra; dlg.body.after(extra); }
   dlgThen = then;
   dlgShown = { title:dlg.title.textContent, body:dlg.body.textContent, yes:dlg.yes.textContent };
-  H.closeAll(); H.openLayer('m-confirm');
+  if (!over) H.closeAll();
+  H.openLayer('m-confirm');
   requestAnimationFrame(() => dlg.yes.focus({ preventScroll:true }));
 }
 
@@ -778,6 +806,21 @@ async function reportFlow(cmd, args, btn){
     return r;
   }
   reportDone(r);
+  return r;
+}
+
+/* 2026-10-01（公開前レビュー）: 設定 → Among Us の場所 →「場所を変える」(moveCopy)。ページの run() に任せると、断りの文
+   （「OneDrive の中には置けません…」）も、設定を保存できず元にも戻せなかった時の cp_undo_failed（コピーが今どこにあって、
+   どうすれば使えるかという**復旧の手順**）も、3.6 秒で消えるトーストにしかならなかった。読み返せない手順は無いのと同じなので、
+   アプリが書いた文（r.error）は reportFlow と同じダイアログで出す。busy・timeout はアプリの文が無いので、今までどおりトースト。
+   うまく行った時はアプリが自分の窓で知らせて開き直し、やめた時（cancelled）は何も出さない。 */
+async function moveCopyFlow(){
+  const r = await H.bridge.invoke('moveCopy', {});
+  if (r && r.ok) return r;
+  if (r && r.error && !r.unsupported && !r.blocked) {
+    /* over: on top of Settings, so 「閉じる」 goes back to the same place to choose another folder (showDialog) */
+    showDialog({ title:H.cmdLabel('moveCopy'), body:String(r.error), yes:tv('v03.close'), danger:false, onlyClose:true, over:true });
+  } else failToast(r, 'moveCopy');
   return r;
 }
 
@@ -972,6 +1015,8 @@ document.addEventListener('click', e => {
   /* v0.4: the log is a page in this window, not a second one */
   if (cmd === 'showLog') { e.preventDefault(); e.stopPropagation(); openLogPage(); return; }
   if (cmd === 'makeReport') { e.preventDefault(); e.stopPropagation(); reportFlow('makeReport', {}, btn); return; }
+  /* 2026-10-01: 「場所を変える」の断りの文と復旧の手順は、消えるトーストではなくダイアログで（moveCopyFlow） */
+  if (cmd === 'moveCopy') { e.preventDefault(); e.stopPropagation(); moveCopyFlow(); return; }
   /* ひとり分の証拠: the box beside the button says whose. Whatever was typed goes straight to the app, even when it is
      empty or the wrong shape: the app already has the words for that (ex_bad / ex_none) in all three languages, so
      they are written in ONE place and this file never has to guess what a code looks like. */

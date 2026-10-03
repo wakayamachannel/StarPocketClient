@@ -33,6 +33,8 @@ namespace Starpocket.Client.Shell
         readonly GameLauncher launcher;
         readonly SingleInstance instance;
         readonly Timer gameTimer;
+        /// <summary>2026-10-01: 見張っているファイルが変わってから <see cref="AegisAutoScan.DebounceMs"/> 待つ（変わるたびに最初から）。</summary>
+        readonly Timer modWatchTimer;
         readonly List<string> pending = new List<string>();
         /// <summary>What the command line asked for: with or without a window, play at once, the 15-second rule (v0.4).</summary>
         readonly StartupPlan plan;
@@ -48,8 +50,9 @@ namespace Starpocket.Client.Shell
         /// <summary>Someone asked for the window before the page was ready (the tray, or a second start).</summary>
         bool showWhenReady;
         /// <summary>SPEC 5.4: the window was put away because a game was started, so it comes back when the game ends.
-        /// A window that was already hidden stays hidden - the app never opens itself over what someone is doing.</summary>
-        bool restoreAfterGame;
+        /// A window that was already hidden stays hidden - the app never opens itself over what someone is doing.
+        /// 2026-10-01（公開前レビュー 2 回目）: 決まりは GameStepAside に（最小化の窓・ゲーム中に人がしまった窓・すぐ落ちたゲーム）。</summary>
+        readonly GameStepAside stepAside = new GameStepAside();
         /// <summary>A game has been seen in this run, and when it went (Aegis.ps1's manual tray: it ends 15 s later).</summary>
         bool everWatched;
         DateTime? gameGoneAt;
@@ -68,6 +71,14 @@ namespace Starpocket.Client.Shell
         bool repairMod;
         /// <summary>The viewer picked Steam's folder while an install was waiting for Steam to install Among Us.</summary>
         volatile bool steamPicked;
+        /// <summary>2026-10-01（AegisAutoScan.cs）: 自動のスキャンが走っている／その最中にまた変わった（終わったらもう 1 回）。</summary>
+        bool autoScanRunning, autoScanAgain;
+        /// <summary>ゲームか長い作業が終わるのを待っている自動スキャンの理由（null なら待っていない）。</summary>
+        string autoScanPending;
+        /// <summary>MOD のコピーの見張り（Aegis が読むファイルだけを拾う）。コピーがまだ無い時は null。</summary>
+        FileSystemWatcher modWatcher;
+        /// <summary>落ち着くのを待っている間に最初に変わったファイル（ログに書く理由）。</summary>
+        string modChangedFirst;
         /// <summary>v1.3: 画像を選ぶ窓が出ているか、写しを作っている最中（二重に開かない。長い処理の busy とは別）。</summary>
         bool avatarBusy;
         string longTask;
@@ -102,6 +113,7 @@ namespace Starpocket.Client.Shell
                 Lang = ctx.Lang,
                 Ui = form,
                 Log = ctx.Log.Write,
+                MayPrune = () => cleanupThisRun,   // v1.1.2 直し 1: この PC で初めての起動なら events.log を整理しない
             });
             aegis.Changed += (s, e) => OnAegisChanged();
 
@@ -122,6 +134,8 @@ namespace Starpocket.Client.Shell
 
             gameTimer = new Timer { Interval = 2000 };
             gameTimer.Tick += (s, e) => PollGame();
+            modWatchTimer = new Timer { Interval = AegisAutoScan.DebounceMs };
+            modWatchTimer.Tick += (s, e) => OnModFilesSettled();
 
             instance.OnShowRequested(() => Post(ShowWindow));
             // v0.4: a second start with --autolaunch asks this one to play. It does NOT ask for the window: the person
@@ -138,6 +152,9 @@ namespace Starpocket.Client.Shell
         /// network and must not: Aegis is not started, housekeeping does not run, and every invoke outside
         /// <see cref="Bridge.BeforeConsent"/> is refused (Terms of Use Article 12(3)).</summary>
         bool waitingForConsent;
+        /// <summary>v1.1.2 直し 1（src\Core\FirstCleanup.cs）: この起動で片づけ（古いログ・報告 zip・events.log の古い行を消す処理）を
+        /// してよいか。<see cref="StartAfterConsent"/> が Aegis より先に 1 回だけ決める。決まる前は false（消さない側）。</summary>
+        bool cleanupThisRun;
 
         async void Start()
         {
@@ -167,11 +184,15 @@ namespace Starpocket.Client.Shell
         {
             // a start with no window does not build the page yet (see StartWebView)
             if (!plan.HideWindow && !await StartWebView()) return;
+            // v1.1.2 直し 1: この PC で初めての起動なら、この回は何も消さない（印は settings.json に書き、次の起動から今までどおり）。
+            // Aegis の events.log の整理（aegis.Start の中）より先に決める
+            cleanupThisRun = FirstCleanup.Decide(ctx.Settings, () => ctx.Settings.Save(ctx.SettingsPath), ctx.Log.Write);
             try { aegis.Start(); }
             catch (Exception ex) { ctx.Log.Write("Aegis failed: " + ex); }
             OnAegisChanged();
             RefreshStatus();
             gameTimer.Start();
+            WatchModFiles();   // 2026-10-01: アプリの外で MOD のコピーが書き換わったら、Aegis がもう一度スキャンする
             StartupHousekeeping();
             if (plan.HideWindow) ctx.Log.Write("start: no window (" + (plan.TrayStart ? "--tray" : "--autolaunch") + ")");
             if (plan.HideWindow && !ctx.Settings.TrayHintShown) ShowTrayHint();   // nothing on screen: say where the app is
@@ -264,17 +285,17 @@ namespace Starpocket.Client.Shell
 
         /// <summary>Remove-ExpiredLocalData, Save-GameLog, then the day zips, in the launcher's own order (ps1:2135).
         /// A long task: a launch waits for it. The logs-folder size is announced afterwards, like
-        /// Update-LogSizeLabel -Announce, so the 2 GB notice is said once per start and not on every redraw.</summary>
+        /// Update-LogSizeLabel -Announce, so the 2 GB notice is said once per start and not on every redraw.
+        /// v1.1.2 直し 1: the first start on this PC only keeps the last game's log - nothing is deleted (FirstCleanup).</summary>
         void StartupHousekeeping()
         {
             if (!TryBeginTask("startup")) { AfterStartup(); return; }
+            bool cleanUp = cleanupThisRun;
             Task.Run(() =>
             {
                 var gl = ctx.NewGameLogs();
-                gl.RemoveExpired();
-                gl.SaveGameLog();
-                // v0.4: loose logs older than 7 days into one zip per day. Room only - no retention number changes.
-                gl.CompressOldLogs();
+                // v0.4: loose logs older than 7 days into one zip per day (dayZips). Room only - no retention number changes.
+                FirstCleanup.Housekeep(gl, cleanUp, true);
                 return gl.ArchiveInfo();
             }).ContinueWith(t => Post(() =>
             {
@@ -455,6 +476,11 @@ namespace Starpocket.Client.Shell
             ["steamRunning"] = s.SteamRunning,
             ["gameRunning"] = s.GameRunning,
             ["warn"] = s.Warn(ctx.Lang),
+            // 2026-10-01: 設定 → Among Us の場所 の「MOD 用のコピー:」に出す場所（host-v01.js applyPaths）。それまでは送って
+            // いなかったので、アプリの中ではここが空のままだった。ユーザーのフォルダは %USERPROFILE% と書く（配信中に
+            // Windows のユーザー名を映さない。見本の書き方と同じ）。copySource は「場所を変える」を押せるかの手がかり。
+            ["modDir"] = CopyPlace.Display(ctx.Paths.Modded, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)),
+            ["copySource"] = ctx.CopySource,
         };
 
         /// <summary>Get-StatusLines off the UI thread (it reads globalgamemanagers twice); only the newest answer is sent.</summary>
@@ -475,6 +501,7 @@ namespace Starpocket.Client.Shell
         void PollGame()
         {
             bool now = Processes.GameRunning();
+            bool was = gameRunning;
             if (now != gameRunning)
             {
                 gameRunning = now;
@@ -482,10 +509,17 @@ namespace Starpocket.Client.Shell
                 else gameGoneAt = DateTime.Now;
                 SendEvent("game", new Dictionary<string, object> { ["running"] = now });
                 RefreshStatus();
-                // SPEC 5.4: the window that stepped aside for the game comes back - without taking the screen from
-                // whatever is in front now
-                if (!now && restoreAfterGame) { restoreAfterGame = false; ShowAfterGame(); }
             }
+            // SPEC 5.4: the window that stepped aside for the game comes back - without taking the screen from
+            // whatever is in front now. 公開前レビュー（2 回目）: ゲームが一度も見えないまま時間が過ぎた時も（GameStepAside）
+            if (stepAside.Poll(was, now, DateTime.Now))
+            {
+                if (stepAside.NeverCameUp) ctx.Log.Write("the game was not seen after the start (it closed at once, or never came up): the window comes back");
+                ShowAfterGame();
+            }
+            // 2026-10-01: ゲームの最中（や作業中）に MOD のコピーが変わって、待たせていたスキャン。ゲームが終わった「切り替わり」
+            // だけで拾うと、2 秒の見回りの間に始まって終わったゲームでは取りこぼすので、走れる時になったら毎回拾う。
+            if (!now && autoScanPending != null && longTask == null && !autoScanRunning) QueueAutoScan(autoScanPending);
             double gone = gameGoneAt.HasValue ? (DateTime.Now - gameGoneAt.Value).TotalSeconds : 0;
             if (TrayAutoQuit(plan.TrayStart, windowShown, everWatched, now, gone, longTask != null))
             {
@@ -502,8 +536,23 @@ namespace Starpocket.Client.Shell
 
         /// <summary>SPEC 5.4: a window that is on screen steps aside for the game it just started, and only such a
         /// window comes back when the game ends. One that was already away (started with --tray or --autolaunch, or put
-        /// away by the close button) is left alone in both directions.</summary>
-        internal static bool StepAsideForGame(bool windowVisible) => windowVisible;
+        /// away by the close button) is left alone in both directions.
+        /// 公開前レビュー（2 回目）: 最小化している窓も「画面に出ている」ではない（WindowAway と同じ見方。GameStepAside.StepsAside）。</summary>
+        internal static bool StepAsideForGame(bool windowVisible, bool windowMinimized) => GameStepAside.StepsAside(windowVisible, windowMinimized);
+
+        /// <summary>2026-10-01（公開前レビュー）: ゲームが終わって窓が戻るのは、アプリが終わろうとしていない時だけ。
+        /// quitting（Shutdown に入った）だけでなく quitFading（「終了」の縮む・薄くなる演出の最中）でも戻さない。</summary>
+        internal static bool ComesBackAfterGame(bool quitting, bool quitFading) => !quitting && !quitFading;
+
+        /// <summary>2026-10-01（公開前レビュー）: 去る演出（縮む 0.3 秒・薄くなる 0.14 秒）の最中に、人が窓を戻して演出が
+        /// 取りやめになった時の印。窓は出たままなので「閉じかけ」も「終わりかけ」も戻す。その演出に後から「終了」が乗って
+        /// いても、その終了は捨てられている（then ごと取りやめ）。quitFading を立てたままにすると、ShowWindow・RequestQuit が
+        /// 先に返るようになり、**トレイの「開く」も「終了」も効かなくなる**。</summary>
+        internal static void AfterFadeCancelled(ref bool closing, ref bool quitFading)
+        {
+            closing = false;
+            quitFading = false;
+        }
 
         void OnAegisChanged()
         {
@@ -528,6 +577,13 @@ namespace Starpocket.Client.Shell
         void UpdateScanCard(AegisSnapshot snap)
         {
             if (snap == null) { CloseScanCard(); return; }
+            // 2026-10-01: 自動のスキャンはカードに触らない（出さない・閉じない）。窓がトレイにある時、ファイルが変わるたびに
+            // 右下にカードが出たら邪魔。結果はトレイの点・バッジ・Aegis パネルに出る。開いているカード（起動時の赤など）は、
+            // 自動のスキャンに閉じられないよう、そのまま残す。
+            // ただし、自動のスキャンが赤なしで終わったら、終わって残っているカード（起動時の赤など）は閉じる。直ったのに
+            // カードだけ赤のまま残ると、トレイの点・バッジ・パネルの緑と食い違う（公開前レビューの指摘）。赤のままなら触らない。
+            if (AutoScanClosesCard(snap.Kind, snap.Phase, snap.LastScanSerious, scanCard != null, scanCardPhase)) { CloseScanCard(); return; }
+            if (ScanCardIgnores(snap.Kind)) return;
             bool start = snap.Kind == "start";
             if (start && snap.Phase == "done" && snap.LastScanSerious > 0 && !startFoundShown) FoundAtStart(snap.LastScanSerious);
             switch (ScanCardPlan(snap.Kind, WindowAway, windowShown, ctx.Settings.StartScan))
@@ -670,6 +726,9 @@ namespace Starpocket.Client.Shell
         {
             longTask = null;
             if (taskLock != null) { taskLock.Dispose(); taskLock = null; }
+            // 2026-10-01: 作業の最中に MOD のコピーが変わって、スキャンを待たせていた分。作業の終わりの処理（状態の
+            // 書き直し・返事）を先に済ませてから走らせるので Post。ファイルを書き換える作業は、自分でも頼む（DoTask / DoDev）。
+            if (autoScanPending != null && !quitting) Post(() => { if (autoScanPending != null && longTask == null) QueueAutoScan(autoScanPending); });
         }
 
         void Post(Action a)
@@ -718,13 +777,14 @@ namespace Starpocket.Client.Shell
                 case "launchVanilla": DoLaunchVanilla(id); break;
                 case "install": DoInstall(id, inv.Args); break;
                 case "syncSteam": DoTask(id, cmd, i => i.SyncGameCopy()); break;
-                case "checkUpdate": DoTask(id, cmd, i => i.CheckUpdate(Json.Bool(inv.Args, "install"))); break;
+                case "checkUpdate": DoTask(id, cmd, i => i.CheckUpdate(Json.Bool(inv.Args, "install")), Json.Bool(inv.Args, "install")); break;
                 case "pickSteam": Reply(id, PickSteam()); break;
                 case "pickModSource": Reply(id, PickModSource()); break;   // v1.4: 開発モードのソースのフォルダ
                 case "aegis.rescan": RunScan(false, r => Reply(id, r)); break;
                 case "aegis.scanOnly": RunScan(true, r => Reply(id, r)); break;
                 case "aegis.events": Reply(id, OpenInNotepad(aegis.EventsLogPath, "events.log")); break;
                 case "openModFolder": Reply(id, OpenInExplorer(ctx.Paths.Modded)); break;
+                case "moveCopy": DoMoveCopy(id); break;   // 2026-10-01: 設定 → Among Us の場所 →「場所を変える」
                 case "openLogsFolder":
                     if (!GameFolders.PathExists(ctx.Paths.Modded)) { Reply(id, NotFound(S.T(ctx.Lang, "st_mod"), ctx.Paths.Modded)); break; }
                     try { Directory.CreateDirectory(ctx.Paths.LogArchiveDir); } catch (Exception ex) { Reply(id, Bridge.Fail(S.T(ctx.Lang, "err", ex.Message))); break; }
@@ -748,7 +808,8 @@ namespace Starpocket.Client.Shell
                 // 2026-09-28: 設定の「サードパーティー」。アプリの隣に置いてある NOTICE を開きます
                 case "legal.third": Reply(id, OpenInNotepad(Path.Combine(ctx.ExeDir ?? "", "NOTICE"), S.T(ctx.Lang, "f_notice"))); break;
                 case "openExternal": Reply(id, OpenExternal(inv.Args)); break;
-                case "window.minimize": form.WindowState = FormWindowState.Minimized; Reply(id, Bridge.Ok()); break;
+                // 2026-10-01: 縮む動きのため EnsureCaptionStyle。公開前レビュー（2 回目）: 人がしまった窓は、ゲームの後でも広げない（GameStepAside）
+                case "window.minimize": stepAside.PersonPutAway(); form.EnsureCaptionStyle(); form.WindowState = FormWindowState.Minimized; Reply(id, Bridge.Ok()); break;
                 case "window.close": Reply(id, Bridge.Ok()); Post(OnCloseButton); break;
                 case "window.drag": Reply(id, Bridge.Ok()); Post(form.BeginDrag); break;   // the move loop runs outside the WebView2 event
                 case "app.quit": Reply(id, Bridge.Ok()); Post(RequestQuit); break;
@@ -781,19 +842,20 @@ namespace Starpocket.Client.Shell
                 // R-41: the only red row was "PocketRoles.dll has changed" -> the play button offers 修復 (PORT-MAP 13.3)
                 repairMod = o.Blocked && o.RepairMod;
                 RefreshStatus();
-                if (o.Ok) AfterLaunched();
+                if (o.Ok) AfterLaunched(false);
                 Reply(id, o.ToResult(cmd));
             }));
         }
 
         /// <summary>SPEC 5.4: the game is starting, so the window steps aside into the notification area and comes back
         /// when the game ends. A window that was ALREADY away stays away - a start from the tray, from --autolaunch or
-        /// from another start must never put a window in front of anybody.</summary>
-        void AfterLaunched()
+        /// from another start must never put a window in front of anybody.
+        /// 公開前レビュー（2 回目）: 最小化している窓も触らない（ゲームの後で元の大きさに広がって出てこないように）。
+        /// <paramref name="vanilla"/> は素の Among Us（Steam を通すので、ゲームが見えるまで長めに待つ。GameStepAside）。</summary>
+        void AfterLaunched(bool vanilla)
         {
             if (quitting) return;
-            if (!StepAsideForGame(form.Visible)) { restoreAfterGame = false; return; }
-            restoreAfterGame = true;
+            if (!stepAside.Launched(form.Visible, form.WindowState == FormWindowState.Minimized, vanilla, DateTime.Now)) return;
             ctx.Log.Write("the window goes to the notification area while the game runs (it comes back when the game ends)");
             HideToTray();
         }
@@ -802,13 +864,17 @@ namespace Starpocket.Client.Shell
         /// whatever the person turned to while the game was on stays in front.</summary>
         void ShowAfterGame()
         {
-            if (quitting) return;
+            // 2026-10-01（公開前レビュー）: 「終了」の演出の最中（quitFading）にも戻さない（ShowWindow と同じ）
+            if (!ComesBackAfterGame(quitting, quitFading)) return;
             if (!uiReady) { ShowWindow(); return; }   // the page is not there yet: it comes up as soon as it is
             shownOnce = true;
             windowShown = true;
             CloseScanCard();
             form.EnsureOpaque();
-            try { Native.ShowWindow(form.Handle, Native.SW_SHOWNOACTIVATE); }
+            form.EnsureCaptionStyle();   // 2026-10-01: 最小化のまま隠れた窓が「タスクバーから伸びる」動きで戻るように
+            // 2026-10-01（公開前レビュー）: SW_SHOWNOACTIVATE だけでは、最小化して Hide() した窓の Visible が false のまま
+            // 残る。MainForm.ShowNoActivate が、アクティブにしない Show() でその印も戻す
+            try { form.ShowNoActivate(); }
             catch (Exception ex) { ctx.Log.Write("window: " + ex.Message); form.Show(); }
             SendEvent("window", new Dictionary<string, object> { ["visible"] = true });
         }
@@ -819,12 +885,28 @@ namespace Starpocket.Client.Shell
         void StartPlay(bool windowed, string why)
         {
             if (quitting) return;
+            // 公開前レビュー（2 回目）で気づいた: 最初の同意の画面に答える前は、ページからのプレイ（launch）は Bridge の関所で断っている。
+            // 外から頼まれたプレイ（2 回目の起動）だけがその関所の外から起動できたので、同じく断る（--autolaunch は Start で外してある）
+            if (waitingForConsent) { ctx.Log.Write("play (" + why + "): the first-run screen has not been answered"); return; }
             if (longTask != null) { ctx.Log.Write("play (" + why + "): " + longTask + " is running"); return; }
             if (gameRunning) { ctx.Log.Write("play (" + why + "): " + S.T(ctx.Lang, "la_running")); return; }
             if (windowed) plan.Windowed = true;
+            // 公開前レビュー（2 回目）: 窓が画面に出ている時は、トレイの「プレイ」（TrayPlay）と同じく、ページの PLAY の流れで起動する
+            // （MOD の画面へ移り、起動前の検査の進み具合も、Aegis が止めた結果も、そこに出る）。ここで直に起動すると、ホームを
+            // 見ている人には何も変わって見えなかった。起動するのはページの 1 回だけ（ここでは起動しない）
+            if (PlayThroughPage(WindowAway, uiReady))
+            {
+                ctx.Log.Write("play (" + why + "): the window is on screen, the page runs its PLAY");
+                SendEvent("nav", new Dictionary<string, object> { ["run"] = "play" });
+                return;
+            }
             if (ctx.Settings.PlaysVanilla) DoLaunchVanilla(null);   // Settings → 起動するゲーム: plain Among Us
             else DoLaunch(null, "launch");
         }
+
+        /// <summary>外から頼まれたプレイ（--autolaunch・2 回目の起動）を、ページの PLAY の流れに任せるか。窓が画面に出ていて
+        /// （最小化・トレイではない）、ページができている時だけ。それ以外は今までどおりアプリが直に起動する（窓は出さない）。</summary>
+        internal static bool PlayThroughPage(bool windowAway, bool uiReady) => !windowAway && uiReady;
 
         /// <summary>Another start asked this Client to play (SingleInstance's .Play event, v0.4).</summary>
         void PlayFromOutside(bool windowed)
@@ -846,7 +928,7 @@ namespace Starpocket.Client.Shell
                 LaunchOutcome o = t.Status == TaskStatus.RanToCompletion && t.Result != null
                     ? t.Result
                     : new LaunchOutcome { Error = S.T(ctx.Lang, "err", t.Exception != null ? t.Exception.GetBaseException().Message : "?") };
-                if (o.Ok) AfterLaunched();   // SPEC 5.4: the window steps aside for plain Among Us too
+                if (o.Ok) AfterLaunched(true);   // SPEC 5.4: the window steps aside for plain Among Us too
                 Reply(id, o.ToResult("launchVanilla"));
             }));
         }
@@ -875,8 +957,11 @@ namespace Starpocket.Client.Shell
         }
 
         /// <summary>One long Installer task (install / syncSteam / checkUpdate): off the UI thread, one at a time, progress
-        /// to the page and the taskbar button, and the status redrawn when it ends (the copy on disk has changed).</summary>
-        void DoTask(string id, string cmd, Func<Installer, TaskOutcome> body)
+        /// to the page and the taskbar button, and the status redrawn when it ends (the copy on disk has changed).
+        /// 2026-10-01: 終わったら（成功でも失敗でも。途中まで書き換わっていることがある）Aegis がもう一度スキャンする
+        /// （AegisAutoScan.AfterTask。checkUpdate は <paramref name="installs"/> の時だけ）。初めてのインストールでコピーが
+        /// できた時のために、見張りもここで付け直す。</summary>
+        void DoTask(string id, string cmd, Func<Installer, TaskOutcome> body, bool installs = false)
         {
             if (!TryBeginTask(cmd)) { Reply(id, Bridge.Busy()); return; }
             steamPicked = false;
@@ -893,8 +978,23 @@ namespace Starpocket.Client.Shell
                 if (t.IsFaulted) ctx.Log.Write(cmd + ": " + t.Exception.GetBaseException());
                 if (o.Ok) { repairMod = false; blockedByAegis = false; }
                 RefreshStatus();
+                AfterFilesTask(cmd, installs);
                 Reply(id, o.ToResult());
             }));
+        }
+
+        /// <summary>2026-10-01: MOD のコピーを書き換える作業の後（DoTask / DoDev）。見張りを付け直し、Aegis にもう一度スキャンさせる。</summary>
+        void AfterFilesTask(string cmd, bool installs)
+        {
+            if (!AegisAutoScan.AfterTask(cmd, installs)) return;
+            // 作業の最中に見張りが拾った分は、この 1 回で足りるので捨てる（そのままだと 2 秒後にもう 1 回走った。公開前レビューの指摘）
+            modWatchTimer.Stop();
+            modChangedFirst = null;
+            autoScanPending = null;
+            // 見張りは作り直す。コピーが消されて作り直された時、古い見張りは止まったまま残っている（同じ場所なので付け直されなかった）
+            StopWatchingModFiles();
+            WatchModFiles();
+            QueueAutoScan("after " + cmd);
         }
 
         /// <summary>An install / update step: the page's progress card (host:progress) and the taskbar button.</summary>
@@ -1104,6 +1204,7 @@ namespace Starpocket.Client.Shell
                 if (t.IsFaulted) ctx.Log.Write(cmd + ": " + t.Exception.GetBaseException());
                 if (o.Ok) { repairMod = false; blockedByAegis = false; }
                 RefreshStatus();
+                AfterFilesTask(cmd, false);   // rebuild / devUpdate: 指紋が書き直された今の DLL で、Aegis の行を描き直す
                 Reply(id, o.ToResult());
             }));
         }
@@ -1219,8 +1320,140 @@ namespace Starpocket.Client.Shell
                 var sum = t.Result;
                 if (sum.NotAvailable) { done(Bridge.Unsupported(cmd)); return; }
                 if (!string.IsNullOrEmpty(sum.Error)) { done(Bridge.Fail(sum.Error)); return; }
-                if (sum.Serious == 0 && blockedByAegis) { blockedByAegis = false; RefreshStatus(); }
+                ClearStaleBlock(sum.Serious);
                 done(Bridge.Ok(new Dictionary<string, object> { ["warnings"] = sum.Warnings, ["serious"] = sum.Serious }));
+            }));
+        }
+
+        /// <summary>
+        /// スキャンが赤無しで終わった時、前のプレイで止められた印（blockedByAegis）と「修復」の印（repairMod）を外して、
+        /// プレイボタンを描き直す。2026-10-01: repairMod も外すようにした（それまでは、もう一度スキャンして緑になっても、
+        /// ボタンが「修復」のまま残った）。赤が残っていれば何もしない（止めるかどうかはプレイ前のスキャンが決める）。
+        /// </summary>
+        void ClearStaleBlock(int serious)
+        {
+            if (serious != 0 || (!blockedByAegis && !repairMod)) return;
+            blockedByAegis = false;
+            repairMod = false;
+            RefreshStatus();
+        }
+
+        // ------------------------------------------------------------------ Aegis の自動スキャン（2026-10-01、AegisAutoScan.cs）
+        /// <summary>右下のカードが知らん顔をするスキャンの種類（自動のスキャン）。</summary>
+        internal static bool ScanCardIgnores(string kind) => kind == AegisAutoScan.Kind;
+
+        /// <summary>自動のスキャンが赤なしで終わった時、終わって残っているカードを閉じるか（公開前レビューの指摘）。
+        /// まだ走っているカード（scanning）と、赤が残っている時は閉じない。</summary>
+        internal static bool AutoScanClosesCard(string kind, string phase, int serious, bool cardOpen, string cardPhase) =>
+            kind == AegisAutoScan.Kind && phase == "done" && serious == 0 && cardOpen && cardPhase == "done";
+
+        /// <summary>
+        /// MOD のゲームのコピーを見張る（まだ無ければ何もしない。作業の後にもう一度呼ばれる）。拾うのは Aegis が読むファイルだけ
+        /// （AegisAutoScan.Watched）で、ログやキャッシュは捨てる。見張りが作れなくても、作業の後のスキャンは走る。
+        /// </summary>
+        void WatchModFiles()
+        {
+            string dir = ctx.Paths.Modded;
+            if (quitting || !aegis.IsPorted || string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
+            if (modWatcher != null && string.Equals(modWatcher.Path, dir, StringComparison.OrdinalIgnoreCase)) return;
+            StopWatchingModFiles();
+            try
+            {
+                var w = new FileSystemWatcher(dir)
+                {
+                    IncludeSubdirectories = true,
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                    InternalBufferSize = 64 * 1024,
+                };
+                FileSystemEventHandler one = (s, e) => OnModFileEvent(dir, e.FullPath);
+                w.Changed += one;
+                w.Created += one;
+                w.Deleted += one;
+                w.Renamed += (s, e) => { OnModFileEvent(dir, e.OldFullPath); OnModFileEvent(dir, e.FullPath); };
+                // 取りこぼした（一度に変わりすぎた）時は、何が変わったか分からないので「変わった」として扱う。
+                // 見張っているフォルダが消された時などは、見張り自体が止まる（EnableRaisingEvents が false になる）。
+                // その時は作り直す（公開前レビューの指摘: 止まったまま残り、アプリを開き直すまで見張られなかった）
+                w.Error += (s, e) => Post(() =>
+                {
+                    if (modWatcher == w && !w.EnableRaisingEvents) { StopWatchingModFiles(); WatchModFiles(); }
+                    ModFilesChanged("the watcher reported an error");
+                });
+                w.EnableRaisingEvents = true;
+                modWatcher = w;
+                ctx.Log.Write("Aegis: watching the mod's copy for changes (" + dir + ")");
+            }
+            catch (Exception ex) { ctx.Log.Write("Aegis watch: " + ex.Message); }
+        }
+
+        void StopWatchingModFiles()
+        {
+            var w = modWatcher;
+            modWatcher = null;
+            if (w == null) return;
+            try { w.EnableRaisingEvents = false; w.Dispose(); } catch (Exception) { }
+        }
+
+        /// <summary>FileSystemWatcher のスレッドから。見るファイルでなければここで捨てる（ゲームの最中のログは毎秒来る）。</summary>
+        void OnModFileEvent(string dir, string full)
+        {
+            string rel = AegisAutoScan.Relative(dir, full);
+            if (!AegisAutoScan.Watched(rel)) return;
+            Post(() => ModFilesChanged(rel));
+        }
+
+        /// <summary>UI スレッド。落ち着くまで待つ（変わるたびに待ち直し）。</summary>
+        void ModFilesChanged(string what)
+        {
+            if (quitting) return;
+            if (modChangedFirst == null) modChangedFirst = what;
+            modWatchTimer.Stop();
+            modWatchTimer.Start();
+        }
+
+        void OnModFilesSettled()
+        {
+            modWatchTimer.Stop();
+            string what = modChangedFirst;
+            modChangedFirst = null;
+            if (what != null) QueueAutoScan("changed: " + what);
+        }
+
+        /// <summary>自動のスキャンを頼む。今走れない時（ゲーム中・作業中・自動スキャン中）は、終わった時に走るよう覚えておく。</summary>
+        void QueueAutoScan(string why)
+        {
+            bool game = gameRunning || Processes.GameRunning();
+            switch (AegisAutoScan.Decide(aegis.IsPorted, quitting, game, longTask != null, autoScanRunning))
+            {
+                case "run": RunAutoScan(why); break;
+                case "again": autoScanAgain = true; break;
+                case "game":
+                case "task":
+                    if (autoScanPending == null) ctx.Log.Write("Aegis: a scan waits for the " + (game ? "game" : "task") + " to end (" + why + ")");
+                    autoScanPending = why;
+                    break;
+            }
+        }
+
+        void RunAutoScan(string why)
+        {
+            autoScanRunning = true;
+            autoScanAgain = false;
+            autoScanPending = null;
+            ctx.Log.Write("Aegis: scanning again by itself (" + why + ")");
+            Task.Run(() => aegis.AutoScan()).ContinueWith(t => Post(() =>
+            {
+                autoScanRunning = false;
+                if (quitting) return;
+                if (t.Status != TaskStatus.RanToCompletion || t.Result == null)
+                    ctx.Log.Write("Aegis: the automatic scan failed: " + (t.Exception != null ? t.Exception.GetBaseException().Message : "?"));
+                else if (t.Result.NotAvailable || !string.IsNullOrEmpty(t.Result.Error))
+                    ctx.Log.Write("Aegis: the automatic scan did not run (Aegis is not running here)");
+                else
+                {
+                    ctx.Log.Write("Aegis: automatic scan done (red " + t.Result.Serious + ", warnings " + t.Result.Warnings + ")");
+                    ClearStaleBlock(t.Result.Serious);
+                }
+                if (autoScanAgain) { autoScanAgain = false; QueueAutoScan("changed again during the scan"); }
             }));
         }
 
@@ -1287,6 +1520,171 @@ namespace Starpocket.Client.Shell
                 ["path"] = picked,
                 ["message"] = S.T(ctx.Lang, "dev_pick_ok", picked),
             });
+        }
+
+        // ------------------------------------------------------------------ MOD 用のコピーの場所（2026-10-01、CopyPlace.cs / CopyMover.cs）
+        /// <summary>画面とログに出す形（ユーザーのフォルダは %USERPROFILE%。配信中にユーザー名を映さない）。</summary>
+        static string Shown(string path) => CopyPlace.Display(path, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+
+        /// <summary>移す先から外す「exe の場所」。アプリだけのフォルダの時だけ返し、デスクトップ・ドキュメント・ダウンロード・ユーザーの
+        /// フォルダ・ドライブの一番上に exe を直に置いている時は null（守らない。CopyPlace.IsOwnExeFolder）。</summary>
+        string GuardedExeDir()
+        {
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            return CopyPlace.IsOwnExeFolder(ctx.ExeDir, ctx.Desktop, Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), string.IsNullOrEmpty(home) ? null : GameFolders.Join(home, "Downloads"), home)
+                ? ctx.ExeDir : null;
+        }
+
+        /// <summary>
+        /// 設定 → Among Us の場所 →「場所を変える」（bilibili のコメント「デスクトップに入れたくない」への約束、2026-09-24）。
+        /// フォルダを選ぶ → 置いてよいか確かめる（CopyPlace.Check）→ 本人に確かめる → 移す（CopyMover）→ 設定に書く →
+        /// （写した時だけ）元を消す → アプリを開き直す。開き直すのは、Aegis・見張り・起動の道具が、起動時に場所を覚えるため
+        /// （開発の切り替えと同じやり方）。**どこで止まっても、元のコピーと設定は前のまま**（CopyMover の頭）。
+        /// コピーがまだ無ければ（インストール前）、場所の設定だけ変える。そこに既にコピーがあれば、それを使う。
+        /// 断る時: 引数か環境変数で場所が決まっている／開発モード（再ビルドの DLL が決まった場所にしか入らない）／ゲーム中。
+        /// </summary>
+        async void DoMoveCopy(string id)
+        {
+            string refuse = ctx.CopySource == "env" ? S.T(ctx.Lang, "cp_fixed_env", Shown(ctx.Paths.Modded))
+                : ctx.CopySource == "arg" ? S.T(ctx.Lang, "cp_fixed_arg", Shown(ctx.Paths.Modded))
+                : ctx.DevMode ? S.T(ctx.Lang, "cp_dev")
+                // 公開前レビュー 2026-10-01: settings.json の copyDir を手で Steam のゲームに向けた時。写した後で元（Steam の本物）を消してしまう
+                : CopyPlace.FromSteam(ctx.Paths.Modded, ctx.SteamDir) ? S.T(ctx.Lang, "cp_from_steam", Shown(ctx.Paths.Modded))
+                : gameRunning || Processes.GameRunning() ? S.T(ctx.Lang, "cp_game")
+                : null;
+            if (refuse != null) { Reply(id, Bridge.Fail(refuse)); return; }
+            if (!TryBeginTask("moveCopy")) { Reply(id, Bridge.Busy()); return; }
+            var cancelled = new Dictionary<string, object> { ["cancelled"] = true };
+            bool restart = false, watcherStopped = false;
+            try
+            {
+                string from = ctx.Paths.Modded;
+                string picked;
+                using (var dlg = new FolderBrowserDialog { Description = S.T(ctx.Lang, "cp_pick"), ShowNewFolderButton = true })
+                {
+                    try { string start = GameFolders.Parent(from); if (Directory.Exists(start)) dlg.SelectedPath = start; } catch (Exception) { }
+                    if (dlg.ShowDialog(form) != DialogResult.OK) { Reply(id, Bridge.Ok(cancelled)); return; }
+                    picked = dlg.SelectedPath;
+                }
+                string target = CopyPlace.TargetFor(picked);
+                // 公開前レビュー 2026-10-01: このアプリ自身のフォルダ（設定・ログ・WebView2 の DataDir、exe の場所、Aegis の記録）の
+                // 中にも置かない。アンインストールが「MOD 用のコピーは残します」と言いながら、DataDir ごと消してしまう
+                // 公開前レビュー（2 回目）: exe の場所は、アプリだけのフォルダの時だけ（CopyPlace.IsOwnExeFolder）。exe をデスクトップに
+                // 直に置いた人が、デスクトップのどこにも置けなくなっていた
+                var facts = await Task.Run(() => CopyPlace.Probe(target, from, ctx.Paths.GameExe, ctx.DataDir, GuardedExeDir(), ctx.AegisStateDir));
+                string size = CopyPlace.Size(facts.NeededBytes);
+                string bad = CopyPlace.Check(facts);
+                if (bad != null)
+                {
+                    ctx.Log.Write("move copy: refused (" + bad + "): " + Shown(target));
+                    Reply(id, Bridge.Fail(bad == "cp_space" ? S.T(ctx.Lang, bad, CopyPlace.Size(facts.NeededBytes + CopyPlace.SpaceMargin)) : S.T(ctx.Lang, bad)));
+                    return;
+                }
+                string question = facts.CurrentExists ? S.T(ctx.Lang, "cp_confirm_move", Shown(from), size, Shown(target))
+                    : facts.TargetIsCopy ? S.T(ctx.Lang, "cp_confirm_adopt", Shown(target))
+                    : S.T(ctx.Lang, "cp_confirm_set", Shown(target));
+                if (MessageBox.Show(form, question, AppInfo.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                {
+                    Reply(id, Bridge.Ok(cancelled));
+                    return;
+                }
+                // 確かめている間にゲームが始まっていないか、もう一度（ゲームが掴んでいるファイルは移せない）
+                if (Processes.GameRunning()) { Reply(id, Bridge.Fail(S.T(ctx.Lang, "cp_game"))); return; }
+
+                string done;
+                if (!facts.CurrentExists)
+                {
+                    // 移す物が無い（インストール前、または、そこにあるコピーを使う）: 場所の設定だけ
+                    // 公開前レビュー 2026-10-01: 行き先が「途中で止まった移動の残り」（目印付き）なら、先に片付ける。そのまま設定すると
+                    // 作りかけのコピーを使い、目印も残っていた（Check はこの残りを「上書きしてよい」として通している）
+                    if (facts.TargetHasMarker)
+                    {
+                        var cleaner = new CopyMover { Log = ctx.Log.Write };
+                        if (!await Task.Run(() => cleaner.ClearLeftover(target))) { Reply(id, Bridge.Fail(S.T(ctx.Lang, "cp_locked"))); return; }
+                    }
+                    if (!SaveCopyDir(target)) { Reply(id, Bridge.Fail(S.T(ctx.Lang, "cp_save_failed"))); return; }
+                    done = S.T(ctx.Lang, "cp_set_done", Shown(target));
+                }
+                else
+                {
+                    modWatchTimer.Stop();
+                    StopWatchingModFiles();   // 見張りが動いているフォルダの名前を変えない
+                    watcherStopped = true;
+                    // 公開前レビュー 2026-10-01: 別のドライブへ写している間に、元のコピーのゲームが起動されたら、写すのをやめる
+                    // （遊んでいる間に書き換わるファイルを写し、その後で動いているゲームのフォルダを消すことになる）。
+                    // プロセスの一覧を毎ファイル取ると重いので、1 秒に 1 回だけ見る（CopyMover.Every）。
+                    // 写し終えた後も、元のゲームが動いていれば DeleteOld は消さない（OldInUse、cp_done_left の扱い）
+                    bool oldGameStarted = false;
+                    var oldGame = CopyMover.Every(1000, () => Processes.ModdedGameRunning(from));
+                    var mover = new CopyMover
+                    {
+                        Log = ctx.Log.Write,
+                        Cancelled = () => quitting || (oldGameStarted = oldGame()),
+                        OldInUse = Processes.ModdedGameRunning,
+                        Progress = p => Post(() => OnTaskProgress(p)),
+                    };
+                    var moved = await Task.Run(() => mover.Move(from, target));
+                    taskbar.ClearProgress();
+                    if (!moved.Ok)
+                    {
+                        Reply(id, Bridge.Fail(moved.ErrorKey == "cp_space"
+                            ? S.T(ctx.Lang, "cp_space", CopyPlace.Size(facts.NeededBytes + CopyPlace.SpaceMargin))
+                            : oldGameStarted && !quitting ? S.T(ctx.Lang, "cp_game")   // 写す途中でゲームが起動された（何も変えていない）
+                            : S.T(ctx.Lang, moved.ErrorKey ?? "cp_failed")));
+                        return;
+                    }
+                    if (!SaveCopyDir(target))
+                    {
+                        bool undone = await Task.Run(() => mover.Undo(moved, from, target));
+                        // 公開前レビュー（2 回目）: 写した時（別のドライブ）に戻し切れなかったのは「写しを消し切れなかった」だけで、元のコピーと
+                        // 設定は前のまま。名前を変えた時（同じドライブ）とは、残っている物も、人がすることも違う（CopyMover.UndoFailedKey）
+                        Reply(id, Bridge.Fail(undone ? S.T(ctx.Lang, "cp_save_failed") : S.T(ctx.Lang, CopyMover.UndoFailedKey(moved.Renamed), Shown(target))));
+                        return;
+                    }
+                    bool clean = moved.Renamed || await Task.Run(() => mover.DeleteOld(from));
+                    done = clean ? S.T(ctx.Lang, "cp_done", Shown(target)) : S.T(ctx.Lang, "cp_done_left", Shown(target), Shown(from));
+                }
+                ctx.Log.Write("move copy: the mod copy is now at " + Shown(target) + "; the app opens again");
+                Reply(id, Bridge.Ok(new Dictionary<string, object> { ["restart"] = true, ["text"] = done }));
+                restart = true;
+                MessageBox.Show(form, done, AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                ctx.Log.Write("move copy: " + ex);
+                Reply(id, Bridge.Fail(S.T(ctx.Lang, "cp_failed")));
+            }
+            finally
+            {
+                taskbar.ClearProgress();
+                if (restart)
+                {
+                    autoScanPending = null;   // 開き直すので、待たせていたスキャンは要らない
+                    EndTask();
+                    RestartWhy = "the mod copy moved";
+                    PendingRestart = true;
+                    Post(() => Shutdown());
+                }
+                else
+                {
+                    EndTask();
+                    if (watcherStopped) WatchModFiles();
+                    RefreshStatus();
+                }
+            }
+        }
+
+        /// <summary>settings.json の copyDir を書く。書けなければ前の値に戻して false。</summary>
+        bool SaveCopyDir(string dir)
+        {
+            string before = ctx.Settings.CopyDir;
+            ctx.Settings.SetCopyDir(dir);
+            var saved = SaveSettings();
+            if (saved["ok"] is bool ok && ok) return true;
+            ctx.Settings.SetCopyDir(before);
+            ctx.Log.Write("move copy: settings.json could not be saved");
+            return false;
         }
 
         /// <summary>The folder in the viewer's file manager (openModFolder does not check that it exists, like the launcher).</summary>
@@ -1427,6 +1825,9 @@ namespace Starpocket.Client.Shell
         /// <summary>Set when the developer switch was flipped: <see cref="Program"/> starts the app again once this one is gone.</summary>
         public bool PendingRestart { get; private set; }
 
+        /// <summary>2026-10-01: 開き直す理由（client.log 用）。開発の切り替えと、MOD 用のコピーの場所の変更の 2 つ。</summary>
+        public string RestartWhy { get; private set; } = "developer switch";
+
         Dictionary<string, object> SaveSettings()
         {
             try { ctx.Settings.Save(ctx.SettingsPath); return Bridge.Ok(); }
@@ -1467,36 +1868,51 @@ namespace Starpocket.Client.Shell
         {
             if (quitting || closing) return;
             if (ctx.Settings.Close == ClientSettings.CloseQuits) RequestQuit();
-            else HideToTray();
+            else
+            {
+                // 公開前レビュー（2 回目）: ゲームの最中に人が自分で閉じた窓は、ゲームが終わっても出さない（GameStepAside）。
+                // ゲームの開始でよける時（AfterLaunched）も HideToTray を通るので、印はここ（人が押した所）で外す
+                stepAside.PersonPutAway();
+                HideToTray();
+            }
         }
 
         /// <summary>v1.2: 優しく閉じる。窓を 140 ms 薄くしてから隠す（MainForm.FadeOut）。ページには "window" {closing:true, ms} を
         /// 送り、ページはその間ほんの少し縮む（host-v01.js）。アプリはページの返事を待たない: ページが固まっていても窓は消える。
         /// 演出が無い時（窓が見えていない・「アニメーション効果」OFF）は ms が 0 で、then はもう呼ばれている。
-        /// AfterLaunched（ゲーム開始で窓がよける）もここを通るので同じ演出になる。</summary>
+        /// AfterLaunched（ゲーム開始で窓がよける）もここを通るので同じ演出になる。
+        /// 2026-10-01（持ち主の画面録画「消えてみたい」）: 薄くなる代わりに、**Windows の最小化の動き（タスクバーへ縮む）を見せてから**
+        /// 隠す（MainForm.LeaveToTray）。Steam など普通のアプリと同じ去り方。最小化の動きが OFF の PC では今までどおり薄くなる。
+        /// ページの「ほんの少し縮む」は薄くなる時だけ: 最小化の絵は Windows が窓の絵から作るので、ページを動かしても映らない。</summary>
         void HideToTray()
         {
             if (closing) return;
             closing = true;
-            int ms = form.FadeOut(() =>
+            string how;
+            int ms = form.LeaveToTray(() =>
             {
                 closing = false;
                 form.Hide();
                 SendEvent("window", new Dictionary<string, object> { ["visible"] = false });
                 if (!ctx.Settings.TrayHintShown) ShowTrayHint();
-            });
-            if (ms > 0) SendEvent("window", new Dictionary<string, object> { ["closing"] = true, ["ms"] = ms });
+            }, out how);
+            if (ms > 0 && how == "fade") SendEvent("window", new Dictionary<string, object> { ["closing"] = true, ["ms"] = ms });
         }
 
         /// <summary>v1.2: 薄くなっている最中に窓をもう一度求められて、MainForm が演出をやめた時（MainForm.EnsureOpaque）。
         /// 窓は出たままなので「閉じかけ」の印を戻し、ページの「ほんの少し縮む」も外させる（"window" {visible:true} で外れる）。
         /// 印を戻さないと closing が立ったままになり、**次に ✕ を押しても何も起きなくなる**。
-        /// 終了の最中はここへ来ない（ShowWindow が quitFading で先に返すので EnsureOpaque まで進まない）。</summary>
+        /// 終了の最中はここへ来ない（ShowWindow が quitFading で先に返すので EnsureOpaque まで進まない）。
+        /// 2026-10-01（公開前レビュー）: ただし「縮む 0.3 秒（LeaveToTray）の間に『終了』が来て、その後で人がタスクバーから窓を
+        /// 戻した」時はここへ来る（MainForm の見回りが EnsureOpaque を呼ぶ）。終了は演出ごと捨てられたので、quitFading も戻す
+        /// （AfterFadeCancelled）。戻さないと、それ以降トレイの「開く」と「終了」が何もしなくなった。</summary>
         void OnFadeCancelled()
         {
-            if (!closing) return;
-            closing = false;
-            ctx.Log.Write("close fade cancelled: the window was asked for again");
+            if (!closing && !quitFading) return;
+            bool wasQuit = quitFading;
+            AfterFadeCancelled(ref closing, ref quitFading);
+            ctx.Log.Write(wasQuit ? "close fade cancelled: the window was brought back, the quit that was waiting for it is dropped"
+                : "close fade cancelled: the window was asked for again");
             SendEvent("window", new Dictionary<string, object> { ["visible"] = true });
         }
 
@@ -1533,7 +1949,11 @@ namespace Starpocket.Client.Shell
                 form.Show();
                 SendEvent("window", new Dictionary<string, object> { ["visible"] = true });
             }
-            if (form.WindowState == FormWindowState.Minimized) form.WindowState = FormWindowState.Normal;
+            if (form.WindowState == FormWindowState.Minimized)
+            {
+                form.EnsureCaptionStyle();   // 2026-10-01: 「タスクバーから伸びる」動きで戻るように（MainForm.EnsureCaptionStyle）
+                form.WindowState = FormWindowState.Normal;
+            }
             form.Activate();
             Native.SetForegroundWindow(form.Handle);
             RefreshDefinitions();
@@ -1571,6 +1991,8 @@ namespace Starpocket.Client.Shell
             quitting = true;
             ctx.Log.Write("quit");
             gameTimer.Stop();
+            modWatchTimer.Stop();
+            StopWatchingModFiles();
             CloseScanCard();
             try { aegis.Stop(); } catch (Exception ex) { ctx.Log.Write("Aegis stop: " + ex.Message); }
             try { aegis.Dispose(); } catch (Exception) { }

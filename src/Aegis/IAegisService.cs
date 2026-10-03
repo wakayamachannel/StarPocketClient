@@ -57,6 +57,11 @@ namespace Starpocket.Client.Aegis
         /// <summary>Aegis.ps1 -ScanOnly: fresh definitions, no fetch (aegis.scanOnly). Worker thread.</summary>
         ScanSummary ScanOnly(Action<ScanProgress> progress);
 
+        /// <summary>2026-10-01: the app's own "scan again" after the mod's copy changed (AegisAutoScan.cs): the tray's
+        /// definitions, kind "auto", no progress events. Worker thread. NotAvailable while Aegis is not running here
+        /// (asked quietly: nobody pressed anything, so there is no one to tell).</summary>
+        ScanSummary AutoScan();
+
         /// <summary>%LOCALAPPDATA%\PocketRoles\Aegis\events.log (opened in Notepad by aegis.events).</summary>
         string EventsLogPath { get; }
     }
@@ -76,6 +81,9 @@ namespace Starpocket.Client.Aegis
         public Control Ui;
         /// <summary>client.log.</summary>
         public Action<string> Log;
+        /// <summary>v1.1.2 直し 1: events.log の 30 日の整理をしてよいか（null = してよい）。アプリは、この PC で初めての起動なら
+        /// false を返す（src\Core\FirstCleanup.cs）。整理する時に聞く（古いトレイが終わるのを待って後から始まる時も同じ答え）。</summary>
+        public Func<bool> MayPrune;
     }
 
     internal sealed class ScanProgress

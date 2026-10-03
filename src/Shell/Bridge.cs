@@ -36,6 +36,7 @@ namespace Starpocket.Client.Shell
             "launch", "launchWindowed", "launchVanilla",
             "install", "syncSteam", "checkUpdate", "pickSteam",
             "pickModSource",   // v1.4: 開発モードのソースのフォルダを選ぶ（作者の PC だけ。ClientApp.PickModSource）
+            "moveCopy",        // 2026-10-01: MOD 用のコピーの場所を変える（設定 → Among Us の場所。ClientApp.DoMoveCopy）
             "aegis.rescan", "aegis.scanOnly", "aegis.events",
             "openModFolder", "openLogsFolder", "openConfig", "openLog", "openReadme",
             // 2026-09-28: 設定の「サードパーティー」。同梱の NOTICE（使っている物のライセンス）を開きます。
@@ -100,6 +101,7 @@ namespace Starpocket.Client.Shell
             "openModFolder", "openLogsFolder", "openConfig", "openLog", "openReadme",
             "makeReport", "exportOne", "uninstall",
             "rebuild", "devUpdate",
+            "moveCopy",   // 2026-10-01: コピーを移している間に別の作業が同じフォルダを触らない
         };
 
         /// <summary>settings.set keys (SPEC 3, the prototype's PREF_DEFAULTS). v0.1 stores "close"; v0.1.1 also "startGame";

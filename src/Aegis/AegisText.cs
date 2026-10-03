@@ -53,6 +53,10 @@ namespace Starpocket.Client.Aegis
             { "bep",        new[] { "BepInEx", "BepInEx", "BepInEx" } },
             { "bep.ok",     new[] { "BepInEx 6（IL2CPP）を確認", "已确认 BepInEx 6（IL2CPP）", "BepInEx 6 (IL2CPP) found" } },
             { "bep.none",   new[] { "BepInEx が見つかりません", "找不到 BepInEx", "BepInEx not found" } },
+            // 2026-10-01: ゲームと BepInEx の種類（32bit / 64bit）が違う。{0}=ゲーム {1}=BepInEx
+            { "bep.arch",   new[] { "BepInEx がゲームと種類違い（ゲーム {0} / BepInEx {1}）。MOD は読み込まれません",
+                                    "BepInEx 与游戏位数不同（游戏 {0} / BepInEx {1}）。模组不会被加载",
+                                    "BepInEx does not match the game ({0} vs {1}); the mod will not load" } },
             { "mod",        new[] { "MOD 本体の整合性", "MOD 本体完整性", "Mod integrity" } },
             { "mod.same",   new[] { "v{0}・前回から変更なし", "v{0}・与上次相同", "v{0}, unchanged since last time" } },
             { "mod.first",  new[] { "v{0}・指紋を記録しました", "v{0}・已记录指纹", "v{0}, fingerprint recorded" } },

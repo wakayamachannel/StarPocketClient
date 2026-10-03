@@ -22,6 +22,9 @@ namespace Starpocket.Client.Core
         public string Desktop;
         public string CacheDir;
         public ModPaths Paths;
+        /// <summary>2026-10-01: どの決まりで Paths.Modded になったか（"arg" / "env" / "setting" / "default"、CopyPlace.Source）。
+        /// "arg" と "env" の時は、設定画面の「場所を変える」は理由を言って断る。</summary>
+        public string CopySource = "default";
         public string SteamOverride;
         /// <summary>Steam's Among Us folder found at start (null when not found), like $script:Steam.</summary>
         public string SteamDir;
@@ -86,10 +89,13 @@ namespace Starpocket.Client.Core
             c.DevMode = pick.DevMode;
             c.DevFromSetting = pick.FromSetting;
             c.LoadState(shortcut);
+            string envGameDir = Environment.GetEnvironmentVariable("POCKETROLES_GAMEDIR");
+            c.CopySource = CopyPlace.Source(cli.GameDir, envGameDir, c.Settings.CopyDir, c.DevMode);
             string modded = GameFolders.ResolveModded(new ModdedInputs
             {
                 GameDirArg = cli.GameDir,
-                EnvGameDir = Environment.GetEnvironmentVariable("POCKETROLES_GAMEDIR"),
+                EnvGameDir = envGameDir,
+                SettingCopyDir = c.Settings.CopyDir,
                 DevMode = c.DevMode,
                 Src = c.Src,
                 DesktopDirArg = cli.DesktopDir,

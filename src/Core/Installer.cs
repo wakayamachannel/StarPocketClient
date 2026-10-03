@@ -855,6 +855,22 @@ namespace Starpocket.Client.Core
                 Progress(new TaskProgress { Task = "sync", Step = 2, Of = 2, Value = 0.9 });
                 ClearInterop();
                 State.Set("gameVersion", GameVersion.Read(Paths.Modded));
+
+                // ★ 2026-10-01（公開前レビューで見つかった穴）:
+                //   ここは **BepInEx を一切触りません**（FileCopy が winhttp.dll と BepInEx フォルダーを
+                //   わざと除外しています）。ゲームの種類が変わった更新のあとだと、
+                //   「64bit のゲーム + 32bit の winhttp.dll」が残り、MOD はエラーも出さずに読み込まれません。
+                //   しかもこの直後にゲームが起動する作り（ui\index.html の thenLaunch）なので、
+                //   状態表示を直すだけでは **1 回は素のゲームで部屋を立ててしまいます。**
+                //   だからここで種類を確かめ、違っていたらその場で入れ直します。
+                string doorstop2 = GameFolders.Join(Paths.Modded, "winhttp.dll");
+                bool archOk = GameFolders.PathExists(doorstop2) && PeArch.Matches(Paths.GameExe, doorstop2);
+                if (!archOk)
+                {
+                    Log(T("in_bep_arch", PeArch.Name(PeArch.Machine(Paths.GameExe)), PeArch.Name(PeArch.Machine(doorstop2))));
+                    if (!StepBepInEx(true)) return TaskOutcome.Bad(T("in_bep_fail"));
+                }
+
                 Log(T("sync_done"));
                 Progress(new TaskProgress { Task = "sync", Step = 2, Of = 2, Value = 1 });
                 return TaskOutcome.Good(T("sync_done"));

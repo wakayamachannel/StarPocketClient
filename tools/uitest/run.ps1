@@ -195,6 +195,15 @@ window.chrome.webview = {
   addEventListener(t, f){ if (t === 'message') window.__listeners.push(f); }
 };
 window.__emit = m => window.__listeners.forEach(f => f({ data: m }));
+/* 2026-10-01（持ち主「ホームが標準じゃダメ？」）: which page a start opens on. The state the page will read at its start
+   (its own storage, sp.sample) is taken here, before any of the page's script runs; __spViewNow says what is on the screen
+   (the views that are not hidden, and the rail button marked as the current page). checks.js looks at both. */
+window.__storedAtStart = (() => { try { return localStorage.getItem('sp.sample') || '(nothing)'; } catch (e) { return '(no storage)'; } })();
+window.__spViewNow = () => ({
+  view: [...document.querySelectorAll('.view')].filter(v => !v.hidden).map(v => v.id).join(','),
+  rail: [...document.querySelectorAll('.rail [aria-current="page"]')].map(b => b.dataset.view || b.dataset.title || '?').join(','),
+  stored: window.__storedAtStart
+});
 '@
     Cdp 'Page.addScriptToEvaluateOnNewDocument' ('{"source":' + (ConvertTo-Json $boot -Compress) + '}') | Out-Null
 
@@ -218,11 +227,21 @@ window.__emit = m => window.__listeners.forEach(f => f({ data: m }));
             # the app's own start: the shell event (with the colour), then the language
             Eval ("window.__emit({type:'event',name:'shell',data:{version:'0.3',app:'0.3.0',dragRegion:true,close:'tray',startGame:'pocketroles',autostart:false,accent:'default',mode:'friend'}});") | Out-Null
             Eval ("window.__emit({type:'event',name:'lang',data:{pref:'" + $lang + "',lang:'" + $lang + "'}});") | Out-Null
-            Eval ("window.spReview.skipSplash(); window.spReview.sample('latest');") | Out-Null
+            # 起動時はホーム (2026-10-01): what the window shows when the start screen ends is written down before anything
+            # moves it (window.__start, checked in checks.js). The first of the nine runs starts with nothing stored (a
+            # first start, not installed); every later run starts with "latest" in this profile's storage (put there at the
+            # end of the run before) - the installed PC that used to open on the MOD page. sample() is a start too.
+            Eval ("window.spReview.skipSplash(); window.__start = window.__spViewNow(); window.spReview.sample('latest'); window.__start.afterSample = window.__spViewNow().view;") | Out-Null
+            # most checks below are about the MOD page. A start no longer lands there, so it is opened the way a person does.
+            Eval ("window.spHost.closeAll(); window.spHost.show('game');") | Out-Null
             Start-Sleep -Milliseconds 500
             Eval ('window.__hostSource = ' + (ConvertTo-Json $hostJs -Compress) + ';') | Out-Null
             Eval $checksJs | Out-Null
             $json = EvalValue ('window.__spChecks(' + (ConvertTo-Json $Group -Compress) + ', ' + (ConvertTo-Json $mode.n -Compress) + ').then(r => JSON.stringify(r))')
+            # the next run starts as an installed PC does: "latest" in the page's storage. The checks end on "not installed"
+            # (their last "status"), and a start from that would open on home even with the old start rule, so the case that
+            # used to open on the MOD page would never be tried (the first run alone stays the first, empty start).
+            Eval "try { localStorage.setItem('sp.sample', 'latest'); } catch (e) {}" | Out-Null
             if (-not $json) { Line ("FAIL [" + $lang + "/" + $scheme + "] the checks did not run"); $fail++; continue }
             $rows = $json | ConvertFrom-Json
             # The rows are counted here, while they are being printed, and not with @($json | ConvertFrom-Json).Count:

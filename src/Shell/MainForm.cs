@@ -39,6 +39,29 @@ namespace Starpocket.Client.Shell
         /// <summary>WebView2 handles the page's app-region: drag strips itself (else the UI asks for window.drag).</summary>
         public bool DragRegionSupported { get; private set; }
 
+        /// <summary>2026-10-01（公開前レビュー）: true の間だけ、WinForms の Show() が窓をアクティブにしない
+        /// （<see cref="ShowWithoutActivation"/>。Show() は SW_SHOWNOACTIVATE で出す）。<see cref="ShowNoActivate"/> だけが立てる。</summary>
+        public bool NoActivate;
+        protected override bool ShowWithoutActivation => NoActivate;
+
+        /// <summary>
+        /// 2026-10-01（公開前レビューの指摘・見えない窓で実測）: ゲームが終わった時に、**フォーカスを取らずに**窓を戻す（SPEC 5.4）。
+        /// トレイへしまう時は「最小化してから Hide()」（<see cref="LeaveToTray"/>）。その窓を SW_SHOWNOACTIVATE だけで戻すと、
+        /// 窓は画面に出るのに **WinForms の Visible は false のまま**残る（Hide() で消した印を、WinForms は自分の Show() でしか戻さない）。
+        /// すると次の ✕ が「見えていない窓」として扱われ（CloseFade.PlannedLeave）、ShowWindow は Show() をもう一度呼ぶ。
+        /// だから SW_SHOWNOACTIVATE で最小化を解いた**後で**、まだ Visible が false なら、アクティブにしない Show() で印を戻す。
+        /// 順番が大事: 先に Show() を呼ぶと、WindowState が Minimized のままなので WinForms は SW_SHOWMINIMIZED で出してしまう。
+        /// ShowWindow が投げた時は、そのまま呼んだ側へ（呼んだ側が普通の Show() に切り替える）。
+        /// </summary>
+        public void ShowNoActivate()
+        {
+            Native.ShowWindow(Handle, Native.SW_SHOWNOACTIVATE);
+            if (Visible) return;
+            NoActivate = true;
+            try { Show(); }
+            finally { NoActivate = false; }
+        }
+
         /// <summary>v1.2: 優しく閉じる（CloseFade.cs）。null か Running でない間は演出中ではない。</summary>
         CloseFade fade;
         System.Windows.Forms.Timer fadeTimer;   // ほかの Timer（System.Threading / System.Timers）と取り違えないよう名前ごと書く
@@ -87,6 +110,8 @@ namespace Starpocket.Client.Shell
                 var cp = base.CreateParams;
                 // a borderless window that still minimises from its taskbar button and has a system menu (Alt+Space)
                 cp.Style |= Native.WS_MINIMIZEBOX | Native.WS_SYSMENU;
+                // 2026-10-01: WS_CAPTION は**ここには書かない**（EnsureCaptionStyle の説明）。ここに書くと、閉じて開くたびに
+                // 窓がタイトルバーの分ずつ大きくなる（公開前レビューの指摘・見えない窓で 1280x720 → 1296x759 → 1312x798 と実測）。
                 if (!Native.IsWindows11OrLater) cp.ClassStyle |= Native.CS_DROPSHADOW;
                 return cp;
             }
@@ -104,8 +129,44 @@ namespace Starpocket.Client.Shell
             try { Native.ChangeWindowMessageFilterEx(Handle, WM_TaskbarButtonCreated, Native.MSGFLT_ALLOW, IntPtr.Zero); } catch (Exception) { }
         }
 
+        /// <summary>
+        /// 2026-10-01: 出来上がった窓にだけ WS_CAPTION を付ける。**Windows は、タイトルバーを持たない窓には最小化・元に戻す時の
+        /// 動き（タスクバーへ縮む／タスクバーから伸びる）を付けない**ので、縮める直前と戻す直前に呼ぶ。タイトルバーそのものは
+        /// WndProc の WM_NCCALCSIZE で幅 0 にするので、見た目は枠なしのまま。
+        ///
+        /// なぜ CreateParams に書かないのか（公開前レビューで見つかった重大な不具合）: .NET Framework 4.8 の WinForms は、
+        /// 最小化から戻す時に「覚えておいた中身の大きさ＋ CreateParams の枠（AdjustWindowRectEx）」で窓の大きさを付け直す。
+        /// CreateParams に WS_CAPTION があると、本当は 0 の枠を足してしまい、**閉じて開くたびに 16x39 ずつ大きくなった**。
+        /// 実物の窓にだけ付ければ、WinForms の計算は「枠なし」のまま（見えない窓で 3 回繰り返して 1280x720 のまま、と実測）。
+        /// 公開前レビュー（2 回目）: その実測は 64 bit で行っていて、x86 の公開版では GetWindowLongPtrW が無いため、ここは毎回失敗して
+        /// いた（Native.GetWindowStyle）。直した後で、ビルドした x86 の exe の MainForm そのものを 32 bit の PowerShell で見えない窓に
+        /// して測り直した: トレイへしまう（LeaveToTray）→ 戻す・ゲームの後（ShowNoActivate）・ページの「－」→ 戻す を各 2〜3 回、
+        /// どれも 1280x720 のまま、WS_CAPTION は付いたまま、ログに「caption style:」は 0 行。
+        /// WinForms が自分のスタイルを書き直すと（UpdateStyles）この印は消えるが、その時は動きが付かないだけで、大きさは狂わない。
+        /// 最大化ボタン（WS_MAXIMIZEBOX）と枠（WS_THICKFRAME）は付けないので、ダブルクリックでの最大化や端へのスナップも起きない。
+        /// </summary>
+        public void EnsureCaptionStyle()
+        {
+            if (!IsHandleCreated || IsDisposed) return;
+            try
+            {
+                // 公開前レビュー: 32 bit（公開する exe）でも呼べる形で（Native.GetWindowStyle の説明）
+                int style = Native.GetWindowStyle(Handle);
+                if ((style & Native.WS_CAPTION) == Native.WS_CAPTION) return;
+                Native.SetWindowStyle(Handle, style | Native.WS_CAPTION);
+                Native.SetWindowPos(Handle, IntPtr.Zero, 0, 0, 0, 0,
+                    Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_FRAMECHANGED);
+            }
+            catch (Exception ex) { log("caption style: " + ex.Message); }   // 付かなければ動きが無いだけ
+        }
+
         protected override void WndProc(ref Message m)
         {
+            // 2026-10-01: 窓の全面をクライアント領域（ページ）にする。EnsureCaptionStyle で WS_CAPTION を付けるので、何もしないと
+            // Windows が上端にタイトルバーの分を取ってしまう。何も変えずに 0 を返すと「窓の四角＝クライアントの四角」になる
+            // （wParam が TRUE でも FALSE でも、渡された四角をそのまま残すのが答え）。枠もタイトルバーも描かれない。
+            // WS_CAPTION が無い時（今までの枠なし）も、答えは同じ「窓の四角＝クライアント」なので、いつも 0 を返してよい。
+            if (m.Msg == Native.WM_NCCALCSIZE) { m.Result = IntPtr.Zero; return; }
             if (m.Msg == WM_TaskbarButtonCreated && WM_TaskbarButtonCreated != 0) TaskbarButtonCreated?.Invoke(this, EventArgs.Empty);
             base.WndProc(ref m);
         }
@@ -157,6 +218,64 @@ namespace Starpocket.Client.Shell
             fade.Start();
             return ms;
         }
+
+        /// <summary>
+        /// 2026-10-01（持ち主の画面録画）: トレイへしまう。Windows の**最小化の動き（タスクバーへ縮んでいく）**を見せてから
+        /// <paramref name="then"/>（Hide）を呼ぶ。<paramref name="how"/> はどの去り方になったか（<see cref="CloseFade.PlannedLeave"/>:
+        /// "minimize" / "fade" / "none"）。返すのは掛かるミリ秒で、0 なら then はもう同期に呼び済み。
+        ///
+        ///   - 最小化の動きが使えない時（設定で OFF・読めない・既に最小化済み）は <see cref="FadeOut"/> と同じ（薄くなる／すぐ）。
+        ///   - 待つ間は <see cref="CloseFade"/> を「時計だけ」で回す（α は触らない）。だから決めごとは FadeOut と同じ:
+        ///     演出の最中にもう一度呼ばれたら then を差し替える（✕ のあとのトレイの「終了」は、縮み終わったら終了）、
+        ///     途中で窓がもう一度求められたら <see cref="EnsureOpaque"/> がやめる（隠さない）。
+        ///   - 窓は**最小化されたまま**隠れる。次に出す側（ClientApp.ShowWindow の Minimized → Normal、ShowAfterGame の
+        ///     SW_SHOWNOACTIVATE）が元に戻すので、その時 Windows が「タスクバーから伸びる」動きを付ける。
+        ///   - 待つ時間（<see cref="CloseFade.MinimizeHoldMs"/>）は Windows の縮む動き（約 0.2〜0.25 秒）より少し長め。
+        ///     短いと縮み切る前に隠れて、最後が途切れて見える。その間、窓はもう最小化されているので待たされた感じは無い。
+        /// </summary>
+        public int LeaveToTray(Action then, out string how)
+        {
+            if (fade != null && fade.Running) { fade.Then = then; how = leaveHow ?? "fade"; return CloseFade.DurationMs; }
+            how = CloseFade.PlannedLeave(Visible && IsHandleCreated && !IsDisposed, WindowState == FormWindowState.Minimized,
+                Native.TryClientAreaAnimation(), Native.TryMinimizeAnimation());
+            if (how != "minimize")
+            {
+                int ms0 = FadeOut(then);
+                if (ms0 == 0) how = "none";
+                leaveHow = how;
+                return ms0;
+            }
+            var clock = Stopwatch.StartNew();
+            fade = new CloseFade(CloseFade.MinimizeHoldMs, () => clock.Elapsed.TotalMilliseconds, null, then, null, log);
+            leaveHow = how;
+            try
+            {
+                fadeTimer = new System.Windows.Forms.Timer { Interval = CloseFade.TickMs };
+                bool sawMinimized = false;
+                fadeTimer.Tick += (s, e) =>
+                {
+                    // 縮んでいる間に、タスクバーのボタンや Alt+Tab で人が戻した（Windows が元に戻した）: 隠さずにやめる
+                    // （公開前レビューの指摘: そのままだと 0.3 秒後に、戻したばかりの窓が消えた）。後始末は EnsureOpaque と同じ。
+                    // 「一度は最小化になった」のを見てからだけ。縮まなかった時（万一）にまでやめると、✕ が効かなくなる
+                    bool minimized = WindowState == FormWindowState.Minimized;
+                    if (minimized) sawMinimized = true;
+                    else if (sawMinimized && fade != null && fade.Running) { EnsureOpaque(); return; }
+                    fade.Tick();
+                    if (!fade.Running) StopFadeTimer();
+                };
+            }
+            catch (Exception ex) { log("leave timer: " + ex.Message); fadeTimer = null; }
+            if (fadeTimer == null) { fade.Finish(); how = "none"; return 0; }   // 待てないなら、縮める前にすぐ隠す
+            EnsureCaptionStyle();   // 縮む動きを付けるため（WinForms が消していることがある）
+            try { Native.ShowWindow(Handle, Native.SW_MINIMIZE); }
+            catch (Exception ex) { log("minimize: " + ex.Message); }   // 縮まなくても、時間が来れば隠れる
+            fadeTimer.Start();
+            fade.Start();
+            return CloseFade.MinimizeHoldMs;
+        }
+
+        /// <summary>最後に始めた去り方（LeaveToTray の how）。演出中に差し替えが来た時に同じ答えを返すため。</summary>
+        string leaveHow;
 
         /// <summary>窓を出す直前に: 薄いまま残っていたら 1.0 に戻す（Show / ShowWindow / SW_SHOWNOACTIVATE の前）。
         ///

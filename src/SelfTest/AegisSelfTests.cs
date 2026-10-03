@@ -52,8 +52,71 @@ namespace Starpocket.Client.SelfTest
                 WatcherTests(r);
                 EventsLogTests(r);
                 ToastTests(r);
+                AutoScanTests(r, keys);
             }
             r.Section("");
+        }
+
+        // ================================================================== 2026-10-01: the automatic scan (AegisAutoScan.cs)
+        /// <summary>持ち主「トレイのアイコンからもう一度スキャンしないと、アンチチートの表示が変わらない」。MOD のコピーが変わったら
+        /// アプリが自分でスキャンする。いつ走るか・何を見張るか・誰が待つか、の決まり。</summary>
+        static void AutoScanTests(SelfTestRunner r, TestKeys k)
+        {
+            r.Section("auto scan");
+            r.Check("after the tasks that write the copy (install / syncSteam / rebuild / devUpdate)",
+                AegisAutoScan.AfterTask("install", false) && AegisAutoScan.AfterTask("syncSteam", false)
+                && AegisAutoScan.AfterTask("rebuild", false) && AegisAutoScan.AfterTask("devUpdate", false));
+            r.Check("checkUpdate: only when it installs", AegisAutoScan.AfterTask("checkUpdate", true) && !AegisAutoScan.AfterTask("checkUpdate", false));
+            r.Check("not after play (it has just scanned), the report, uninstall, a scan, nothing",
+                !AegisAutoScan.AfterTask("launch", false) && !AegisAutoScan.AfterTask("launchWindowed", true) && !AegisAutoScan.AfterTask("launchVanilla", false)
+                && !AegisAutoScan.AfterTask("makeReport", false) && !AegisAutoScan.AfterTask("uninstall", false)
+                && !AegisAutoScan.AfterTask("rescan", false) && !AegisAutoScan.AfterTask(null, true));
+
+            r.Equal("relative: inside the copy", @"BepInEx\plugins\PocketRoles.dll",
+                AegisAutoScan.Relative(@"C:\G\Among Us PocketRoles", @"C:\G\Among Us PocketRoles\BepInEx\plugins\PocketRoles.dll"));
+            r.Equal("relative: a trailing slash, / and the case do not matter", "winhttp.dll",
+                AegisAutoScan.Relative(@"C:/G/Among Us PocketRoles\", @"c:\g\among us pocketroles\winhttp.dll"));
+            r.Check("relative: a sibling folder that starts with the same name is outside",
+                AegisAutoScan.Relative(@"C:\G\Among Us", @"C:\G\Among Us PocketRoles\winhttp.dll") == null);
+            r.Check("relative: nothing in, nothing out", AegisAutoScan.Relative(null, "x") == null && AegisAutoScan.Relative("x", null) == null);
+
+            // every file the 13 rows read inside the copy (AegisScan.cs), and the folders that hold them
+            foreach (var p in new[] { @"BepInEx\plugins\PocketRoles.dll", @"BepInEx\plugins\Evil.dll", @"BepInEx\plugins\sub\Deep.dll", @"BepInEx\plugins",
+                @"BepInEx\core\BepInEx.Core.dll", @"BepInEx\core", "BepInEx", "winhttp.dll", "version.dll", "doorstop_config.ini", "Among Us.exe",
+                @"BepInEx\config\jp.pocketroles.mod.cfg", @"BepInEx\PocketRoles\Banlist.txt", "bepinex/PLUGINS/x.DLL", @"\BepInEx\plugins\a.dll" })
+                r.Check("watched: " + p, AegisAutoScan.Watched(p));
+            // **never the logs** (written all through a game), the cache, the interop (hundreds of files at the first start),
+            // the mod's own records, the game's data, nor a folder that only starts with the same name
+            foreach (var p in new[] { @"BepInEx\LogOutput.log", @"BepInEx\cache\x.dat", @"BepInEx\interop\Assembly-CSharp.dll", @"BepInEx\config\BepInEx.cfg",
+                @"BepInEx\PocketRoles\aegis-bans.json", @"BepInEx\PocketRoles\logs\a.log", @"Among Us_Data\globalgamemanagers", "steam_appid.txt",
+                @"BepInEx\pluginsX\a.dll", @"BepInEx\core2\a.dll", @"BepInEx\config", "", null })
+                r.Check("not watched: " + (p ?? "(null)"), !AegisAutoScan.Watched(p));
+
+            r.Equal("decide: nothing in the way -> run", "run", AegisAutoScan.Decide(true, false, false, false, false));
+            r.Equal("decide: no Aegis here -> skip", "skip", AegisAutoScan.Decide(false, false, false, false, false));
+            r.Equal("decide: quitting -> skip, whatever else", "skip", AegisAutoScan.Decide(true, true, true, true, true));
+            r.Equal("decide: a game is running -> wait for it (also during a task or a scan)", "game|game",
+                AegisAutoScan.Decide(true, false, true, false, false) + "|" + AegisAutoScan.Decide(true, false, true, true, true));
+            r.Equal("decide: a long task -> wait for it", "task", AegisAutoScan.Decide(true, false, false, true, false));
+            r.Equal("decide: an automatic scan is running -> once more after it", "again", AegisAutoScan.Decide(true, false, false, false, true));
+            r.Check("the kind is \"auto\"; the wait for the files to settle is 1-5 s",
+                AegisAutoScan.Kind == "auto" && AegisAutoScan.DebounceMs >= 1000 && AegisAutoScan.DebounceMs <= 5000);
+
+            r.Test("a service that has not started (no mutex): not available, and nothing is scanned", () =>
+            {
+                string root = r.NewDir("autoscan");
+                string game = MakeGame(root), st = Path.Combine(root, "state"), bun = Path.Combine(root, "bundled");
+                WriteDefs(bun, DefsText(5, "cheatengine*"), k.A);
+                var svc = NewService(k, game, st, bun, "ja", FakeSystem.Good());
+                int changes = 0;
+                svc.Changed += (s, e) => changes++;
+                var sum = svc.AutoScan();
+                var snap = svc.GetSnapshot();
+                r.Check("NotAvailable, no error text (nobody pressed anything)", sum.NotAvailable && string.IsNullOrEmpty(sum.Error));
+                r.Check("no scan ran: no rows, scan 0, no kind, nobody told", snap.Rows.Count == 0 && snap.Scan == 0 && snap.Kind == "" && changes == 0,
+                    snap.Rows.Count + "|" + snap.Scan + "|" + snap.Kind + "|" + changes);
+            });
+            r.Check("the stub: not available", new AegisStub(null).AutoScan().NotAvailable);
         }
 
         // ================================================================== fakes
@@ -1098,6 +1161,30 @@ namespace Starpocket.Client.SelfTest
                 r.Equal("no file: 0", 0, EventsLog.Prune(st, 30, Clock0));
                 EventsLog.AegisLog(st, Clock0, "Aegis failed: test");
                 r.Equal("aegis.log line", stamp + " Aegis failed: test\r\n", ReadNoBom(Path.Combine(st, "aegis.log")));
+            });
+            // v1.1.2 直し 1 (src\Core\FirstCleanup.cs): the first start on this PC deletes nothing - events.log is the record
+            // a v0.5.4 tray only ever added to, so its old lines are not dropped the moment the app is first opened
+            r.Test("the first start on this PC leaves events.log alone (直し 1)", () =>
+            {
+                string st = r.NewDir("events-first");
+                string path = Path.Combine(st, "events.log");
+                string text = "2026-08-01 10:00:00  old event\r\n2026-09-20 09:00:00  new event\r\n";
+                File.WriteAllText(path, text, Utf8NoBom);
+                var t0 = new DateTime(2020, 1, 1);
+                File.SetLastWriteTime(path, t0);
+                var log = new List<string>();
+                bool may = false;
+                var svc = new AegisService(new AegisContext { StateDir = st, Log = log.Add, MayPrune = () => may }) { Now = () => Clock0 };
+                r.Equal("first start: nothing dropped", 0, svc.PruneEvents());
+                r.Check("... the file is as it was, byte for byte, and not rewritten",
+                    File.ReadAllBytes(path).SequenceEqual(Utf8NoBom.GetBytes(text)) && File.GetLastWriteTime(path) == t0);
+                r.Check("... and client.log says why", log.Any(l => l.Contains("not pruned") && l.Contains("first start")), string.Join(" / ", log));
+                may = true;
+                r.Equal("next start: the line older than 30 days goes", 1, svc.PruneEvents());
+                r.Equal("... the newer line stays", "2026-09-20 09:00:00  new event\r\n", ReadNoBom(path));
+                File.WriteAllText(path, text, Utf8NoBom);
+                var plain = new AegisService(new AegisContext { StateDir = st, Log = log.Add }) { Now = () => Clock0 };
+                r.Equal("no MayPrune given: pruned as before", 1, plain.PruneEvents());
             });
         }
 

@@ -62,8 +62,20 @@ namespace Starpocket.Client.Core
     internal sealed class InstallInfo
     {
         public bool Exe, Bep, BepOk, Dll, Interop;
+        /// <summary>
+        /// BepInEx がゲームと**種類違い**（32bit / 64bit）だと分かった時だけ true。
+        /// **「違う」側を true にしてあるのは、既定値（false）が「問題なし」になるようにするためです。**
+        /// 逆向きにすると、<see cref="Read"/> を通らずに作られた InstallInfo（検査の作り物など）が
+        /// 全部「種類が違う」扱いになります。分からない物を悪い方に倒さない、という原則です。
+        /// </summary>
+        public bool BepArchBad;
         public string GameVer, BepVer, DllVer;
 
+        /// <summary>
+        /// 「在る」だけ。**使える**かどうかは <see cref="BepArch"/> も見てください。
+        /// 版の文字列（6.0.0-be.735）は x86 の zip も x64 の zip も同じなので、
+        /// <see cref="BepOk"/> では 32bit と 64bit の区別が付きません（2026-10-01 の公開前レビューで判明）。
+        /// </summary>
         public bool Installed => Exe && Bep && Dll;
 
         public static InstallInfo Read(ModPaths p)
@@ -75,6 +87,14 @@ namespace Starpocket.Client.Core
             i.Bep = GameFolders.PathExists(core);
             i.BepVer = i.Bep ? GameVersion.ProductVersion(core) : null;
             i.BepOk = !string.IsNullOrEmpty(i.BepVer) && i.BepVer.IndexOf(AppInfo.BepInExVersion, StringComparison.OrdinalIgnoreCase) >= 0;
+            // 2026-10-01: BepInEx がゲームと同じ種類（32bit / 64bit）か。**ここを見ないと「入っている」と
+            // 「使える」の区別が付きません。** 2026.9.29 でゲームが 64bit になったとき、32bit の BepInEx が
+            // 残っている人は、版の文字列が同じなので BepOk が true のまま、状態も ready のまま、
+            // それでいて MOD は一度も読み込まれない、という状態になります（エラーも出ません）。
+            // winhttp.dll が無い時も false にします（無ければ、やはり MOD は読み込まれないため）。
+            // どちらかの PE が読めない時は PeArch.Matches が true を返します（分からないことで動く物を壊さない）。
+            string doorstop = GameFolders.Join(p.Modded, "winhttp.dll");
+            i.BepArchBad = i.Bep && (!GameFolders.PathExists(doorstop) || !PeArch.Matches(p.GameExe, doorstop));
             i.Dll = GameFolders.PathExists(p.DllPath);
             i.DllVer = i.Dll ? GameVersion.DllVersionString(p.DllPath) : null;
             i.Interop = GameFolders.PathExists(GameFolders.Join(p.Modded, @"BepInEx\interop\Assembly-CSharp.dll"));
@@ -114,7 +134,9 @@ namespace Starpocket.Client.Core
             if (devMode)
             {
                 s.NeedsRebuild = (!string.IsNullOrEmpty(s.ModVer) && !string.Equals(lastBuiltGameVersion, s.ModVer, StringComparison.OrdinalIgnoreCase)) || !info.Dll;
-                if (s.NeedsUpdate) { s.PState = "devUpdate"; s.WarnKey = "al_update"; s.WarnArgs = new object[] { s.ModVer, s.SteamVer }; }
+                // 開発モードでも、種類が違えば MOD は読み込まれません。再ビルドより先に知らせます。
+                if (info.BepArchBad) { s.PState = "repair"; s.Repair = "bep"; s.WarnKey = "al_repair_bep"; }
+                else if (s.NeedsUpdate) { s.PState = "devUpdate"; s.WarnKey = "al_update"; s.WarnArgs = new object[] { s.ModVer, s.SteamVer }; }
                 else if (s.NeedsRebuild) { s.PState = "devRebuild"; s.WarnKey = "al_rebuild"; }
                 else { s.PState = "ready"; s.WarnKey = "al_ok_dev"; }
             }
@@ -124,6 +146,10 @@ namespace Starpocket.Client.Core
                 // the copy is there but BepInEx or the mod is missing: the same install steps, but the button says 修復
                 if (!s.Installed && info.Exe) { s.PState = "repair"; s.Repair = "files"; s.WarnKey = "al_repair"; }
                 else if (!s.Installed) { s.PState = "install"; s.WarnKey = "al_notinstalled"; }
+                // 2026-10-01: BepInEx がゲームと種類違い。**ゲームの版が合っているかより先に見ます。**
+                // 版が合っていても MOD が一度も読み込まれない状態なので、こちらの方が重いからです。
+                // 修復は Install() を通り、StepBepInEx が正しい種類を入れ直します。
+                else if (info.BepArchBad) { s.PState = "repair"; s.Repair = "bep"; s.WarnKey = "al_repair_bep"; }
                 else if (repairMod) { s.PState = "repair"; s.Repair = "mod"; s.WarnKey = "al_repair_mod"; }
                 else if (s.NeedsUpdate) { s.PState = "sync"; s.WarnKey = "al_gameupdated"; s.WarnArgs = new object[] { s.ModVer, s.SteamVer }; }
                 else { s.PState = "ready"; s.WarnKey = "al_ok"; }

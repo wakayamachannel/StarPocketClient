@@ -11,6 +11,7 @@ namespace Starpocket.Client.Core
     {
         public string GameDirArg;      // --game-dir / -GameDir
         public string EnvGameDir;      // POCKETROLES_GAMEDIR
+        public string SettingCopyDir;  // 2026-10-01: settings.json copyDir（設定画面の「場所を変える」）
         public bool DevMode;
         public string Src;
         public string DesktopDirArg;   // --desktop-dir / -DesktopDir
@@ -65,11 +66,17 @@ namespace Starpocket.Client.Core
 
         /// <summary>PORT-MAP 3.1: the first that applies - argument, POCKETROLES_GAMEDIR, developer mode (the folder next to Src,
         /// else Desktop), friend mode (Desktop, or %LOCALAPPDATA%\PocketRoles when the Desktop is inside OneDrive and no copy
-        /// is on the Desktop yet, only without --desktop-dir).</summary>
+        /// is on the Desktop yet, only without --desktop-dir).
+        /// 2026-10-01: the folder chosen in Settings (copyDir) comes right after the two the person set by hand - an
+        /// argument or POCKETROLES_GAMEDIR still wins, and Settings says so instead of moving anything (CopyPlace.Source).
+        /// Not in developer mode, though (pre-release review 2026-10-01): 「再ビルド」 writes its DLL only where the mod's
+        /// project puts it (the copy next to the source), so a copyDir left over from friend mode would have the game
+        /// start a copy the rebuild never reaches. Developer mode keeps its own rule; Settings refuses to move it (cp_dev).</summary>
         public static string ResolveModded(ModdedInputs i)
         {
             if (!string.IsNullOrEmpty(i.GameDirArg)) return i.GameDirArg;
             if (!string.IsNullOrEmpty(i.EnvGameDir)) return i.EnvGameDir;
+            if (!i.DevMode && !string.IsNullOrEmpty(i.SettingCopyDir)) return i.SettingCopyDir;
             string desktop = Desktop(i.DesktopDirArg, i.DesktopDefault);
             if (i.DevMode)
             {
@@ -87,9 +94,13 @@ namespace Starpocket.Client.Core
             return modded;
         }
 
-        /// <summary>True only in a build made with DEBUG, i.e. a build the author made for themselves. A RELEASE exe -
-        /// the one that is published and signed - can never be in developer mode (see <see cref="ResolveSource"/>),
-        /// and so can never reach the 「再ビルド」 button or the compiler behind it.</summary>
+        /// <summary>True only in a build made with DEBUG, i.e. a build the author made for themselves. All it decides is
+        /// whether --source-dir is honoured (<see cref="ResolveSource"/>; in a Release build CommandLine does not even
+        /// know the word). It does NOT keep a published exe out of developer mode: a Release exe enters it when
+        /// PocketRoles.csproj sits beside the exe (<see cref="IsDevMode"/>), or through the switch in Settings →
+        /// PocketRoles → 開発 together with a working copy that holds both PocketRoles.csproj and PocketRolesLauncher.ps1
+        /// (DevSource.Choose, src\Core\DevSource.cs; docs\CODE-SIGNING.md 8.). Until 2026-10-02 this said a Release exe
+        /// could never be in developer mode - untrue since the switch, which was already in v1.0.0.</summary>
         /// (a field rather than a const: a const would let the compiler fold the tests that read it away, and warn)
         public static readonly bool DeveloperBuild =
 #if DEBUG
@@ -106,7 +117,8 @@ namespace Starpocket.Client.Core
         /// mode draws a 「再ビルド」 button that hands the folder to dotnet.exe, which does whatever the project file
         /// in it says, cmd.exe included. Both roads are closed: --source-dir does not exist in a Release build
         /// (CommandLine), and the search above the exe is gone, so the only folder that can be the source is the one
-        /// the exe is in - and anyone who can write a file next to the exe could replace the exe itself.</summary>
+        /// the exe is in - and anyone who can write a file next to the exe could replace the exe itself. (The one other
+        /// way into developer mode, the switch in Settings, is decided outside this method: DevSource.Choose.)</summary>
         public static string ResolveSource(string sourceDirArg, string exeDir) => ResolveSource(sourceDirArg, exeDir, DeveloperBuild);
 
         /// <param name="developerBuild">false is what a published exe does, whatever it was given.</param>

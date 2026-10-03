@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using Starpocket.Client.Core;
 
 namespace Starpocket.Client.SelfTest
 {
@@ -98,7 +99,9 @@ namespace Starpocket.Client.SelfTest
                 if (Directory.Exists(work))
                 {
                     if (!File.Exists(Path.Combine(work, MarkerName))) return work + " exists and was not made by the self-test";
-                    Directory.Delete(work, true);
+                    // 2026-10-01: the move tests (InstallSelfTests makeCopy) leave read-only files, which Directory.Delete refuses:
+                    // the second run on the same folder failed before a single test. DeleteTree clears the flag (and never follows a link)
+                    Uninstaller.DeleteTree(work);
                 }
                 else if (File.Exists(work)) return work + " is a file";
                 Directory.CreateDirectory(work);
@@ -161,7 +164,7 @@ namespace Starpocket.Client.SelfTest
         public string NewDir(string name)
         {
             string d = Path.Combine(root, name);
-            if (Directory.Exists(d)) Directory.Delete(d, true);
+            if (Directory.Exists(d)) Uninstaller.DeleteTree(d);   // read-only files too (see PrepareWork)
             Directory.CreateDirectory(d);
             return d;
         }

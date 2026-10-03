@@ -287,6 +287,14 @@ svg.sprite .va{animation:none}
 .play .icon{width:24px;height:24px;stroke-width:2.6}
 /* the sweep while a task runs: the ink's own colour, so it shows on a light fill as well as a dark one */
 .play .fillbar{position:absolute;inset:0 auto 0 0;width:0;background:currentColor;opacity:.18;pointer-events:none}
+/* 2026-09-26: 何％か分からない作業（コンパイルなど。終わるまで数字が出ません）。止まった棒は「固まった」に
+   見えるので、細い帯を流します。動きを減らす設定の時は流さず、薄く塗るだけにします（持ち主 2026-09-26
+   「プレイボタンのところに進捗出すんじゃなかったの？」）。 */
+.play .fillbar.flow{width:100%;opacity:.14;
+  background:linear-gradient(90deg,transparent 0%,transparent 28%,currentColor 44%,currentColor 56%,transparent 72%,transparent 100%);
+  background-size:260% 100%;animation:sp-flow 1.35s linear infinite}
+@keyframes sp-flow{from{background-position:130% 0}to{background-position:-130% 0}}
+@media (prefers-reduced-motion:reduce){.play .fillbar.flow{animation:none;background:currentColor;opacity:.10}}
 .play > span{position:relative}
 /* label + (install / update only) a small line with size and time */
 .play-txt{display:grid;justify-items:center;gap:6px}
@@ -558,7 +566,7 @@ html.av-photo .avatar-btn svg,html.av-photo .pop-av svg{width:100%;height:100%;c
 .plabel{font-weight:800;color:var(--text)}
 .sample-ctl{display:contents}
 .pill{display:inline-flex;align-items:center;gap:6px;font:800 11px/1 var(--font-ui);padding:5px 9px;border-radius:999px;background:var(--panel-3);color:var(--muted)}
-.pill.red{background:var(--accent);color:var(--accent-ink)}   /* 「未公開・作業中」: news, not a fault */
+.pill.red{background:var(--accent);color:var(--accent-ink)}   /* 「公開済み」, the news row with patch notes: news, not a fault */
 .notes .lead{margin:0 0 24px;color:var(--muted);font-size:13px}
 .ngroup{padding:20px 0;border-top:1px solid var(--line)}
 .ngroup h3{margin:0 0 12px;font-size:16px;font-weight:900;display:flex;align-items:center;gap:10px}
@@ -577,6 +585,11 @@ html.av-photo .avatar-btn svg,html.av-photo .pop-av svg{width:100%;height:100%;c
 .feature::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,rgba(9,10,24,.92) 0%,rgba(9,10,24,.7) 38%,rgba(9,10,24,0) 70%)}
 .feature-copy{position:absolute;left:36px;top:0;bottom:0;display:grid;align-content:center;gap:10px;justify-items:start;width:min(440px,calc(100% - 72px))}
 .eyebrow{font:800 12px/1 var(--font-brand);letter-spacing:.12em;color:var(--gold)}
+/* home's big card: the product's name, then what is on this PC (renderHomeState; empty in the app until "status") */
+.eyebrow .home-state{font:700 12.5px/1 var(--font-ui);letter-spacing:0;color:rgba(255,255,255,.86)}
+.eyebrow .home-state::before{content:"·" / "";margin:0 .55em;color:var(--gold)}
+/* a state that needs doing something (修復が必要・Aegis が止めた…): the warning amber of the dark theme - the card is always dark */
+.eyebrow .home-state.attn{color:#F4BA45}
 .feature h3{margin:0;font:900 32px/1.2 var(--font-ui)}
 .feature p{margin:0;color:rgba(255,255,255,.82);max-width:40ch}
 .btn-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
@@ -598,11 +611,13 @@ html.av-photo .avatar-btn svg,html.av-photo .pop-av svg{width:100%;height:100%;c
 .gsub{font-size:12.5px;color:var(--muted);margin-top:-8px}
 .news{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
 .news li{border-bottom:1px solid var(--line)}
-/* row: the time (UTC, its own focus stop) + the button (version and title) */
+/* row: the time (UTC, its own focus stop) + the version and title. Only a version whose patch notes are in the page is a
+   button (.news-row.link); the others are plain text with no hover, because there is nothing behind them to open */
 .news-row{display:grid;grid-template-columns:168px minmax(0,1fr);align-items:center;border-radius:10px}
-.news-row:hover{background:var(--panel-2)}
+.news-row.link:hover{background:var(--panel-2)}
 .news-row > .lt{margin-left:8px;justify-self:start}
-.news button{width:100%;display:grid;grid-template-columns:72px minmax(0,1fr);gap:16px;align-items:center;padding:14px 8px 14px 0;border:0;background:transparent;text-align:left;cursor:pointer;border-radius:10px;color:var(--text)}
+.news .news-item{width:100%;display:grid;grid-template-columns:72px minmax(0,1fr);gap:16px;align-items:center;padding:14px 8px 14px 0;border:0;background:transparent;text-align:left;cursor:default;border-radius:10px;color:var(--text);font:inherit}
+.news button.news-item{cursor:pointer}
 .news time{font-size:12.5px;color:var(--muted);font-weight:700}
 .news .prep{font-size:12.5px;color:var(--muted);font-weight:700;margin-left:8px}
 .news .ver{justify-self:start}
@@ -995,7 +1010,7 @@ body:has(#m-settings:not([hidden])) .toast{background:var(--set-sel);color:var(-
   .feature h3{font-size:26px}
   .news-row{grid-template-columns:minmax(0,1fr)}
   .news-row > .lt,.news .prep{margin:12px 0 0 8px}
-  .news button{grid-template-columns:auto minmax(0,1fr);gap:4px 12px;padding:6px 8px 14px}
+  .news .news-item{grid-template-columns:auto minmax(0,1fr);gap:4px 12px;padding:6px 8px 14px}
   .layer{padding:0}
   .sheet{height:100%;border-radius:0;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);padding-top:env(safe-area-inset-top,0px)}
   /* settings: full screen; the tree becomes a row of 4 tabs, the close button gets its own column */
@@ -1401,7 +1416,8 @@ body:has(#m-settings:not([hidden])) .toast{background:var(--set-sel);color:var(-
 <div class="app" id="app">
   <nav class="rail" aria-label="メイン" data-i18n-attr="aria-label:nav.main">
     <button class="brand-btn" id="brandBtn" data-view="home" data-i18n-attr="aria-label:nav.brand"><span class="logo3d" id="logo3d" aria-hidden="true"><svg viewBox="0 0 64 64"><use id="logoUse" href="#brand-icon"/></svg></span></button>
-    <button class="rail-btn has-tip" data-view="home" data-tipkey="nav.home" data-press><svg class="icon"><use href="#i-home"/></svg></button>
+    <!-- every start shows home (the owner, 2026-10-01: 「ホームが標準じゃダメ？」), so this is the current page from the first frame -->
+    <button class="rail-btn has-tip" data-view="home" data-tipkey="nav.home" aria-current="page" data-press><svg class="icon"><use href="#i-home"/></svg></button>
     <button class="rail-btn has-tip" data-view="library" data-tipkey="nav.library" data-press><svg class="icon"><use href="#i-grid"/></svg></button>
     <div class="rail-sep" role="separator"></div>
     <!-- titles from the title manifest (MANIFEST, SPEC 4.2); "…" appears only when they do not fit -->
@@ -1427,8 +1443,10 @@ body:has(#m-settings:not([hidden])) .toast{background:var(--set-sel);color:var(-
   <div class="main">
     <div class="sthumb" id="sthumb" aria-hidden="true"></div>
 
-    <!-- ============ game page ============ -->
-    <section class="view" id="view-game" aria-labelledby="gameTitle" data-tab="ov">
+    <!-- ============ game page ============
+         hidden at start: the window opens on home. This page comes up from home, the rail, the library, and the
+         install / play / update / repair buttons (FLOW, show('game')) -->
+    <section class="view" id="view-game" aria-labelledby="gameTitle" data-tab="ov" hidden>
       <header class="band">
         <h1 class="game-word" id="gameTitle">PocketRoles</h1>
         <div class="seg" role="tablist" id="gameTabs" data-i18n-attr="aria-label:tabs.label">
@@ -1477,8 +1495,8 @@ body:has(#m-settings:not([hidden])) .toast{background:var(--set-sel);color:var(-
           <div class="media-col">
             <ul class="media">
               <li><button class="media-card" data-cmd="media.new" data-press="0.98">
-                <span class="mthumb"><svg viewBox="0 0 320 180" aria-hidden="true"><rect width="320" height="180" fill="url(#tg1)"/><g fill="#fff" opacity=".5"><circle cx="40" cy="30" r="1.4"/><circle cx="280" cy="40" r="1.2"/><circle cx="250" cy="150" r="1.6"/><circle cx="120" cy="160" r="1"/><circle cx="300" cy="100" r="1"/></g><path d="M268 22c0 10 3 13 13 13-10 0-13 3-13 13 0-10-3-13-13-13 10 0 13-3 13-13z" fill="#F7C548"/><rect x="24" y="30" width="46" height="20" rx="6" fill="#F7C548"/><text x="47" y="44.5" text-anchor="middle" font-family="Montserrat,sans-serif" font-weight="900" font-size="11" fill="#1E2257" letter-spacing="1">NEW</text><text x="22" y="112" font-family="Montserrat,sans-serif" font-weight="900" font-size="58" fill="#F7C548" letter-spacing="-1">v0.5.5</text><use href="#brand-mascot" x="222" y="96" width="64" height="64"/></svg><span class="dur"><svg class="icon" aria-hidden="true"><use href="#i-doc"/></svg><span data-i18n="media.newMeta">パッチノート</span></span></span>
-                <span class="mtitle" data-i18n="media.new">v0.5.5 の新しいこと</span>
+                <span class="mthumb"><svg viewBox="0 0 320 180" aria-hidden="true"><rect width="320" height="180" fill="url(#tg1)"/><g fill="#fff" opacity=".5"><circle cx="40" cy="30" r="1.4"/><circle cx="280" cy="40" r="1.2"/><circle cx="250" cy="150" r="1.6"/><circle cx="120" cy="160" r="1"/><circle cx="300" cy="100" r="1"/></g><path d="M268 22c0 10 3 13 13 13-10 0-13 3-13 13 0-10-3-13-13-13 10 0 13-3 13-13z" fill="#F7C548"/><rect x="24" y="30" width="46" height="20" rx="6" fill="#F7C548"/><text x="47" y="44.5" text-anchor="middle" font-family="Montserrat,sans-serif" font-weight="900" font-size="11" fill="#1E2257" letter-spacing="1">NEW</text><text x="22" y="112" font-family="Montserrat,sans-serif" font-weight="900" font-size="58" fill="#F7C548" letter-spacing="-1">v0.5.6</text><use href="#brand-mascot" x="222" y="96" width="64" height="64"/></svg><span class="dur"><svg class="icon" aria-hidden="true"><use href="#i-doc"/></svg><span data-i18n="media.newMeta">パッチノート</span></span></span>
+                <span class="mtitle" data-i18n="media.new">v0.5.6 の新しいこと</span>
               </button></li>
               <li><button class="media-card" data-open="d-aegis" data-press="0.98">
                 <span class="mthumb"><svg viewBox="0 0 320 180" aria-hidden="true"><rect width="320" height="180" fill="url(#tg2)"/><g fill="none" stroke="#2EC4B6" opacity=".35"><circle cx="160" cy="90" r="46"/><circle cx="160" cy="90" r="66" stroke-dasharray="4 8"/><circle cx="160" cy="90" r="86" opacity=".6"/></g><rect x="0" y="104" width="320" height="2" fill="#45D49B" opacity=".45"/><path d="M160 52l30 12v22c0 19-13 33-30 40-17-7-30-21-30-40V64z" fill="#18C37E"/><path d="M147 90l9 9 18-19" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="dur"><svg class="icon" aria-hidden="true"><use href="#i-doc"/></svg><span data-i18n="media.article">記事</span></span></span>
@@ -1537,69 +1555,31 @@ body:has(#m-settings:not([hidden])) .toast{background:var(--set-sel);color:var(-
         </footer>
       </div>
 
-      <!-- patch notes tab (from CHANGELOG.md v0.5.5, summarised) -->
+      <!-- patch notes tab: the version the NEWS row with notes:true names, in three languages (NOTES in the script, renderNotes) -->
       <div role="tabpanel" id="panel-pn" aria-labelledby="tab-pn" hidden>
         <article class="notes">
-          <div class="notes-head"><h2>v0.5.5</h2><span class="pill red" data-i18n="notes.unreleased">未公開・作業中</span><span class="notes-time" id="notesTime"></span></div>
-          <p class="lead" data-i18n="notes.lead">CHANGELOG.md の v0.5.5 から要約（2026-09-22 時点）。細かい数値や手順は CHANGELOG と README にあります。</p>
-          <p class="lang-note" id="notesLangNote" hidden data-i18n="notes.jaOnly"></p>
-
-          <section class="ngroup"><h3><svg class="icon"><use href="#i-shield"/></svg>Aegis（アンチチート）</h3><ul>
-            <li><b>判定値を GitHub から更新</b> <span>— ゲーム内 Aegis の数値とルールの強さを定義ファイル <code>[rules]</code> から読む。ルールの強さはゆるくする方向にしか変えられない。<code>/ac rules</code> で確認。</span></li>
-            <li><b>定義ファイルに署名</b> <span>— RSA 3072・SHA-256。署名が合うファイルだけを使い、古い版には戻さない。</span></li>
-            <li><b>判定値を部屋ごとにずらす</b> <span>— 既定 ±10 %（0〜20 %）。公開された値ぎりぎりを狙うチート対策。</span></li>
-            <li><b>MOD の中のセルフチェック</b> <span>— ほかのプラグイン・チートの DLL・差し替え DLL・ゲームのコードの書き換えを見つけたら、ロビーを作れなくする。</span></li>
-            <li><b>投票の言い当て通知</b> <span>— 登録オフの部屋で、手がかりのない会議でインポスターに投票し続ける人を、ホストの画面にだけ知らせる（退出はさせない）。</span></li>
-            <li><b>スピードハック検知を軽く</b> <span>・<b>トレイに「脆弱ドライバーの遮断」</b> <span>— 無効なら黄色の注意だけ。</span></span></li>
-          </ul></section>
-
-          <section class="ngroup"><h3><svg class="icon"><use href="#i-warn"/></svg>NG ワード（暴言の対策）</h3><ul>
-            <li><b>2 回注意して 3 回目で自動退出</b> <span>（この部屋へのバン付き）。ロビーでも試合中でも、登録オン・オフどちらの部屋でも。</span></li>
-            <li><b>表記ゆれとローマ字も</b> <span>— 全角・半角、かな、間に記号を入れた書き方、ローマ字の「shine」なども。ふつうの会話に当たらないよう許可の一覧で守る。</span></li>
-            <li><b><code>/ng</code> コマンド</b> <span>— 言葉の追加・削除・テスト、全部の一覧はホストの画面にだけ。一覧は GitHub の定義ファイルからも更新。</span></li>
-            <li><b>安全装置</b> <span>— 2 分以内に 3 人以上が当たったら、その部屋では自動退出を止めて注意だけに。</span></li>
-          </ul></section>
-
-          <section class="ngroup"><h3><svg class="icon"><use href="#i-lock"/></svg>BAN と異議申し立て</h3><ul>
-            <li><b>部屋をまたぐ BAN</b> <span>— 確実な検知で退出させた人は、自分のすべての部屋で 30 日 → 180 日 → 無期限。</span></li>
-            <li><b>共有 BAN</b> <span>— 開発者が証拠を確かめて署名した一覧だけ。公開するのは PUID のハッシュだけ。</span></li>
-            <li><b>公式への通報</b> <span>— 確実な検知の時は自動で（同じ人へは 30 日に 1 回、全体で 1 時間に 5 件まで）。ほかは <code>/aegis report</code>。</span></li>
-            <li><b>証拠の記録と異議申し立て</b> <span>— 退出・BAN ごとに <code>AEG-XXXXX.json</code>。窓口は Discord のチケットとメール。</span></li>
-            <li><b>Aegis BAN 管理</b> <span>— 作者の PC で BAN を管理するアプリ。5 秒の確認、管理人モード（提案だけ）、Windows Hello での本人確認、書き換えを見つける操作の記録。</span></li>
-          </ul></section>
-
-          <section class="ngroup"><h3><svg class="icon"><use href="#i-globe"/></svg>ロビーと通信</h3><ul>
-            <li><b>ロビーの延長の修正</b> <span>— 延長の自動受け入れは v0.5.4 まで動いていなかった。サーバーの申し出を直接読んですぐ受ける。1 人なら廃村せず部屋を作り直す。</span></li>
-            <li><b>サーバーの近い・遠い</b> <span>— wire RTT 40 ms 以下で「近い」。ホストの画面に 1 行と、ログに 30 秒ごとのラグの記録。</span></li>
-            <li><b>高 PING の部屋の作り直しは既定でオフに</b> <span>・<b>Discord の投稿にアイコン</b></span></li>
-          </ul></section>
-
-          <section class="ngroup"><h3><svg class="icon"><use href="#i-folder"/></svg>ランチャー</h3><ul>
-            <li><b>ゲームのログを残す</b> <span>— 開いた時と起動の直前に <code>LogOutput-日時.log</code> へ。7 日より前は月ごとの zip。自動では消さない。「ログのフォルダを開く」を追加。</span></li>
-            <li><b>報告 zip</b> <span>— 過去のログ 3 回分と Aegis の証拠の記録（直近 90 日）を入れる。設定ファイルは入れない。</span></li>
-          </ul></section>
-
-          <section class="ngroup"><h3><svg class="icon"><use href="#i-check"/></svg>修正・その他</h3><ul>
-            <li><b>3 人の部屋でインポスターが 0 人になる不具合を修正</b></li>
-            <li><b>README に「Aegis と個人情報（よくある質問）」</b> <span>— 調べるもの・調べないもの、送るもの、記録されるもの。</span></li>
-          </ul></section>
+          <div class="notes-head"><h2 id="notesVer">v0.5.6</h2><span class="pill" id="notesPill"></span><span class="notes-time" id="notesTime"></span></div>
+          <p class="lead" data-i18n="notes.lead">PocketRoles の CHANGELOG.md の v0.5.6 から、遊ぶ人とホストに関係する所だけを要約（2026-10-01 時点）。細かい所は CHANGELOG と README にあります。</p>
+          <div id="notesBody"></div>
         </article>
         <footer class="foot"><span class="proto" data-i18n="proto">プロトタイプ</span><p>© 2026 StarPocket Games</p></footer>
       </div>
     </section>
 
-    <!-- ============ home ============ -->
-    <section class="view" id="view-home" hidden aria-labelledby="homeTitle">
+    <!-- ============ home: the page every start opens on ============ -->
+    <section class="view" id="view-home" aria-labelledby="homeTitle">
       <div class="page">
         <h1 class="vh" id="homeTitle" data-i18n="nav.home">ホーム</h1>
+        <!-- the big card says what PocketRoles is, tied to no version (a version here goes stale with every release);
+             the small line after the name is what is on this PC (renderHomeState: the app's "status") -->
         <div class="feature">
           <svg class="art" viewBox="0 0 1200 520" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><use href="#art-hero" width="1200" height="520"/></svg>
           <div class="feature-copy">
-            <span class="eyebrow" data-i18n="home.eyebrow">PocketRoles v0.5.5 · 準備中</span>
-            <h3 data-i18n="home.title">Aegis がもっと強く</h3>
+            <span class="eyebrow">PocketRoles<span class="home-state num" id="homeState" hidden></span></span>
+            <h3 data-i18n="home.title">ホストだけが入れる役職 MOD</h3>
             <p data-i18n="home.body"></p>
             <div class="btn-row">
-              <button class="btn-white" data-goto-notes data-press><span data-i18n="home.more">詳しく見る</span></button>
+              <button class="btn-white" data-goto-notes data-press><span data-i18n="home.more">パッチノート</span></button>
               <button class="btn-red" data-view="game" data-press><svg class="icon fill"><use href="#i-play"/></svg><span data-i18n="home.open">PocketRoles へ</span></button>
             </div>
           </div>
@@ -1608,7 +1588,7 @@ body:has(#m-settings:not([hidden])) .toast{background:var(--set-sel);color:var(-
         <div class="grid-cards" id="homeMods"></div>
         <h2 data-i18n="home.games">ゲーム</h2>
         <div class="grid-cards" id="homeGames"></div>
-        <h2><span data-i18n="home.news">お知らせ</span><span class="sample-tag" data-i18n="home.newsSample">時刻は見本</span></h2>
+        <h2><span data-i18n="home.news">お知らせ</span></h2>
         <ul class="news" id="news"></ul>
         <div class="proto-bar" style="margin:26px 0 0"><span class="proto" data-i18n="proto">プロトタイプ</span><span class="sample-ctl"></span></div>
       </div>
@@ -1922,9 +1902,14 @@ body:has(#m-settings:not([hidden])) .toast{background:var(--set-sel);color:var(-
       </div>
       <div class="fr-doc">
         <div class="fr-doctext" id="frDocText" role="tabpanel" tabindex="0" aria-labelledby="frTab-terms"></div>
+        <!-- 「ブラウザで開く（準備中）」のボタンは 2026-09-26 に外しました。押せない物を最初の画面に
+             置かないためです。その説明文は「この 3 つの文書は、まだウェブに出していません」でしたが、
+             もう出ています（starpocketgames.com/terms.ja.html など）。押せるようにするには、ページから
+             URL を受け取らない形の命令（doc と lang だけを渡し、行き先は C# 側の表で決める物）を
+             Bridge に足し、それを BeforeConsent に入れる必要があります。同意の関所そのものを広げる
+             変更なので、思いつきでやらないでください。 -->
         <div class="fr-docfoot">
           <span id="frVer"></span>
-          <button type="button" class="fr-open" id="frOpen">ブラウザで開く ›</button>
         </div>
       </div>
     </div>
@@ -2039,15 +2024,15 @@ ja: {
   'maint.chip':'メンテナンス: {t}','maint.badge':'メンテナンス','sample':'見本','maint.sampleShort':'見本',
   'maint.title':'Among Us の更新に合わせた一時停止',
   'maint.body':'これは表示の見本です。本番では、MOD が使えない時間などをここでお知らせします。',
-  'media.article':'記事','media.new':'v0.5.5 の新しいこと','media.newMeta':'パッチノート','media.aegis':'Aegis の仕組み','media.aegisMeta':'見張るもの・止めるもの',
+  'media.article':'記事','media.new':'v0.5.6 の新しいこと','media.newMeta':'パッチノート','media.aegis':'Aegis の仕組み','media.aegisMeta':'見張るもの・止めるもの',
   'sec.platforms':'対応 プラットフォーム','plat.host':'ホスト（部屋を作る人）','plat.players':'参加者（何も入れなくて OK）','plat.steam':'Steam 版','plat.phone':'スマホ',
   'sec.info':'その他の 情報','info.site':'ウェブサイト','info.dev':'開発','info.dist':'配布','info.date':'公開日','info.dateV':'2026年9月','info.planned':'予定','info.siteV':'PocketRoles サイト',
   'sec.req':'動作環境','req.more':'さらに表示','req.less':'閉じる','req.t0':'必要','req.t1':'推奨','req.t2':'快適',
   'req.big0':'メモリ','req.big1':'メモリ','req.big2':'通信（往復）','req.net':'これ以下なら「近い」と表示','req.noneSr':'記載なし',
-  'req.src':'出典: Steam ストアの Among Us のページ（OS・CPU・メモリ・GPU）、README（v0.5.5 作業中）、Steam の 32 bit の Windows のサポート終了は Valve の告知。書かれていない所は「—」。「推奨」と「快適」は、書かれている項目だけを出しています（書かれていない所は「必要」を見てください）。',
-  'notes.unreleased':'未公開・作業中','notes.lead':'CHANGELOG.md の v0.5.5 から要約（2026-09-22 時点）。細かい数値や手順は CHANGELOG と README にあります。','notes.jaOnly':'',
-  'home.eyebrow':'PocketRoles v0.5.5 · 準備中','home.title':'Aegis がもっと強く','home.body':'NG ワードの対策、部屋をまたぐ BAN、署名付きの定義ファイル。','home.more':'詳しく見る','home.open':'PocketRoles へ','home.mods':'MOD','home.news':'お知らせ',
-  'mod.sub':'インストール済み · {v}','mod.soonBody':'新しい MOD を準備中','home.games':'ゲーム','game.soonBody':'新しいゲームを準備中','news.prep':'準備中',
+  'req.src':'出典: Steam ストアの Among Us のページ（OS・CPU・メモリ・GPU）、README（v0.5.6）、ゲーム本体が 64 bit になったことは 2026.9.29 の実物のファイルで確認（2026-10-01）。書かれていない所は「—」。「推奨」と「快適」は、書かれている項目だけを出しています（書かれていない所は「必要」を見てください）。',
+  'notes.out':'公開済み','notes.lead':'PocketRoles の CHANGELOG.md の v0.5.6 から、遊ぶ人とホストに関係する所だけを要約（2026-10-01 時点）。細かい所は CHANGELOG と README にあります。',
+  'home.title':'ホストだけが入れる役職 MOD','home.body':'参加者はふだんの Among Us のまま。PC・スマホ・Switch から、何も入れずに遊べます。','home.more':'パッチノート','home.open':'PocketRoles へ','home.mods':'MOD','home.news':'お知らせ',
+  'mod.sub':'インストール済み · {v}','mod.soonBody':'新しい MOD を準備中','home.games':'ゲーム','game.soonBody':'新しいゲームを準備中','news.prep':'準備中','news.next':'次の版',
   'lib.status':'状態','lib.steam':'Steam 版','lib.copy':'MOD 用のコピー','lib.present':'あり','lib.client':'Steam クライアント','lib.running':'起動中','lib.check':'更新を確認','lib.folder':'フォルダ',
   'aegis.state':'見張り中','aegis.sub':'いまは待機中 — ゲームを始めると監視します','aegis.meta':'定義ファイル v2 · 署名 OK · 検知ルール 26','aegis.l1':'待機中','aegis.l2':'監視中（ゲーム中）','aegis.l3':'退出の直後 12 秒',
   'aegis.checksTitle':'見るもの（13 項目）','aegis.notTitle':'見ないもの','aegis.not1':'部屋に入るだけの人の PC やスマホは何も調べない','aegis.not2':'ホストの PC でも Among Us まわりだけ（プロセスは名前だけを照合）',
@@ -2093,7 +2078,7 @@ ja: {
   'up.title':'アップデート中','up.meta':'{done} / {total} MB · {speed} MB/秒 · 残り {eta}','up.calc':'計算中…','up.min':'約 {n} 分','up.sec':'約 {n} 秒','up.valuetext':'{p}%、残り {eta}',
   'up.done':'アップデートしました。PocketRoles {v} になりました。',
   'comm.title':'コミュニティ','comm.open':'コミュニティとプロフィール','comm.collapse':'コミュニティ欄をたたむ','comm.expand':'コミュニティ欄を広げる',
-  'comm.join':'参加する','comm.joinDc':'Discord に参加する','comm.online':'いまオンライン {n} 人','comm.onlineShort':'Discord のオンライン人数（見本）','comm.soon':'準備中','comm.soonDc':'Discord は準備中です',
+  'comm.join':'参加する','comm.joinDc':'Discord に参加する','comm.online':'いまオンライン {n} 人','comm.onlineShort':'Discord のオンライン人数（見本）','comm.soon':'準備中','comm.soonDc':'Discord は準備中です','comm.noCount':'オンラインの人数は出していません',
   'comm.people':'最近の人','comm.rooms':'最近の部屋','comm.search':'検索','comm.streamer':'配信モード中は表示しません','comm.foot':'30 日たつと自動で消えます',
   'comm.none':'見つかりません','comm.lock':'入室制限','comm.vipLabel':'{x} を VIP にする','comm.lockLabel':'{x} の入室を制限する','comm.players':'{n}/15 人','comm.yesterday':'きのう',
   'acct.open':'プロフィールとメニュー','acct.icon':'アイコンを変える','acct.rename':'名前を変える','acct.name':'名前','acct.nameNote':'16 文字まで。Enter で決定、Esc でやめる',
@@ -2134,12 +2119,12 @@ ja: {
   'set.clear':'最近の記録を今すぐ消す','set.clearD':'最近の人と部屋の一覧を消します。VIP と入室制限の印も消えます。','set.clearBtn':'消す',
   'set.prLang':'表示言語','set.prLangSame':'StarPocket Client と同じ','set.prLangNote':'ゲームの中の PocketRoles の文字（役職の説明・チャット）の言語。',
   'set.channel':'受け取る版','set.chStable':'安定版（おすすめ）','set.chTest':'テスト版（新しいけど不具合があるかも）',
-  'set.place':'Among Us の場所','set.placeBtn':'フォルダを選ぶ','set.copy':'MOD 用のコピー:','set.pathSample':'（見本）','set.notYet':'まだありません','set.open':'開く',
+  'set.place':'Among Us の場所','set.placeBtn':'フォルダを選ぶ','set.copy':'MOD 用のコピー:','set.pathSample':'（見本）','set.notYet':'まだありません','set.copyHere':'ここに作ります:','set.open':'開く','set.moveCopy':'場所を変える',
   'set.autoUp':'自動アップデート','set.autoUpD':'StarPocket Client を開いている間に、PocketRoles の新しい版を自動で入れます。ゲーム中は入れません。','set.autoUpChk':'自動アップデートを有効にする',
   'set.shortcutCap':'ゲームを起動','set.shortcut':'デスクトップショートカットを追加','set.shortcutD':'デスクトップに PocketRoles のアイコンを作ります。押した時だけ作り、勝手には作りません。',
   'set.repairCap':'直す','set.repair':'MOD 用のコピーを直す','set.repairD':'Steam 版から MOD 用のコピーを作り直し、BepInEx の interop と cache を消します。次の起動は 1〜2 分かかります。Steam 版はそのまま。','set.repairBtn':'修復',
   'set.tools':'ツール・困ったとき','set.toolsD':'今のランチャーでできることは、全部ここから使えます。',
-  'set.devCap':'開発','set.dev':'開発用（自分でビルドした MOD）で動かす','set.devD':'MOD のソースから再ビルドして、その DLL で遊びます。オフに戻すと配布版のインストールに戻ります。切り替えると StarPocket Client を開き直します。','set.devPath':'置き場所:','set.devNow':'いま入っている PocketRoles.dll:','toast.devOn':'開発用に切り替えます。開き直します…','toast.devOff':'配布用に戻します。開き直します…',
+  'set.devCap':'開発','set.dev':'開発用（自分でビルドした MOD）で動かす','set.devD':'MOD のソースから再ビルドして、その DLL で遊びます。オフに戻すと配布版のインストールに戻ります。切り替えると StarPocket Client を開き直します。','set.devPath':'置き場所:','set.devPick':'別のフォルダを選ぶ…','set.devNow':'いま入っている PocketRoles.dll:','toast.devOn':'開発用に切り替えます。開き直します…','toast.devOff':'配布用に戻します。開き直します…',
   'tg.launch':'起動','tg.update':'更新','tg.help':'困ったとき','tg.folders':'フォルダ','tg.aegis':'Aegis','tg.dev':'開発','tg.cli':'コマンドライン',
   'tag.friend':'友達','tag.dev':'開発','tag.new':'新','set.autoOf':'{x}（自動で行います）',
   'legal.terms':'利用規約','legal.third':'サードパーティー','legal.privacy':'プライバシーポリシー','legal.termsSoon':'利用規約（準備中）','legal.privacySoon':'プライバシーポリシー（準備中）',
@@ -2155,8 +2140,8 @@ ja: {
   'toast.avatarProto':'画像を選ぶ窓はアプリで開きます（プロトタイプ）。','toast.avatarReset':'元の絵に戻しました（プロトタイプ）。',
   'toast.vipOn':'{x} を VIP にしました（見本）。','toast.vipOff':'{x} の VIP を外しました（見本）。','toast.lockOn':'{x} の入室を制限しました（見本）。','toast.lockOff':'{x} の入室制限を外しました（見本）。',
   'toast.streamOn':'配信モードをオンにしました。ほかの人の名前と部屋のコードを隠します。','toast.streamOff':'配信モードをオフにしました。',
-  'nav.sample':'{x}（見本）','time.local':'あなたの時刻: {t}','notes.updated':'更新','home.newsSample':'時刻は見本',
-  'mod.subNone':'未インストール · 約 {size}','mod.subUpdate':'更新あり · {v} → {n}','mod.subUpdate0':'更新あり · いまは {v}','mod.sample':'見本のタイトル','lib.notFound':'見つかりません',
+  'nav.sample':'{x}（見本）','time.local':'あなたの時刻: {t}',
+  'mod.subNone':'未インストール · 約 {size}','mod.subNone0':'未インストール','mod.subUpdate':'更新あり · {v} → {n}','mod.subUpdate0':'更新あり · いまは {v}','mod.sample':'見本のタイトル','lib.notFound':'見つかりません',
   'ps.sub.install':'約 {size} · 約 {min} 分','ps.sub.update':'{size} · 数秒','ps.sub.needGame':'Among Us が見つかりません',
   'ps.needGame':'Steam に Among Us が見つかりません','ps.m.needGame':'押すと Steam が開きます。入れ終わると自動で続きます','ps.b.needGame':'Steam で入れる','ps.o.needGame':'友達: Among Us が無い（赤）',
   'ps.waitGame':'Steam で Among Us を入れてください','ps.m.waitGame':'入れ終わると、自動で続きます','ps.b.waitGame':'Steam を待っています…','ps.pick':'別の場所にある時: フォルダを選ぶ',
@@ -2195,19 +2180,19 @@ zh: {
   'maint.chip':'维护：{t}','maint.badge':'维护','sample':'示例','maint.sampleShort':'示例',
   'maint.title':'配合 Among Us 更新暂停使用',
   'maint.body':'这是显示示例。正式版会在这里通知模组不能使用的时间等。',
-  'media.article':'文章','media.new':'v0.5.5 的新内容','media.newMeta':'更新说明','media.aegis':'Aegis 的原理','media.aegisMeta':'监视什么、阻止什么',
+  'media.article':'文章','media.new':'v0.5.6 的新内容','media.newMeta':'更新说明','media.aegis':'Aegis 的原理','media.aegisMeta':'监视什么、阻止什么',
   'sec.platforms':'支持平台','plat.host':'房主（创建房间的人）','plat.players':'参加者（什么都不用装）','plat.steam':'Steam 版','plat.phone':'手机',
   'sec.info':'其他信息','info.site':'网站','info.dev':'开发','info.dist':'发布','info.date':'发布日期','info.dateV':'2026年9月','info.planned':'计划','info.siteV':'PocketRoles 网站',
   'sec.req':'运行环境','req.more':'显示更多','req.less':'收起','req.t0':'最低','req.t1':'推荐','req.t2':'舒适',
   'req.big0':'内存','req.big1':'内存','req.big2':'网络（往返）','req.net':'不超过此值时显示为“近”','req.noneSr':'未注明',
-  'req.src':'来源：Steam 商店的 Among Us 页面（OS、CPU、内存、显卡）、README（v0.5.5 开发中），Steam 停止支持 32 位 Windows 来自 Valve 公告。没有写明的地方为“—”。“推荐”和“舒适”只列出有说明的项目（没有列出的请看“最低”）。',
-  'notes.unreleased':'未发布 · 开发中','notes.lead':'摘自 CHANGELOG.md 的 v0.5.5（截至 2026-09-22）。','notes.jaOnly':'更新说明目前只有日文（CHANGELOG 为日文）。',
-  'home.eyebrow':'PocketRoles v0.5.5 · 准备中','home.title':'Aegis 更强了','home.body':'不当言论对策、跨房间封禁、带签名的定义文件。','home.more':'查看详情','home.open':'前往 PocketRoles','home.mods':'模组','home.news':'公告',
-  'mod.sub':'已安装 · {v}','mod.soonBody':'正在准备新的模组','home.games':'游戏','game.soonBody':'正在准备新的游戏','news.prep':'准备中',
+  'req.src':'来源：Steam 商店的 Among Us 页面（OS、CPU、内存、显卡）、README（v0.5.6）；游戏本体已改为 64 位一事，是用 2026.9.29 的实际文件确认的（2026-10-01）。没有写明的地方为“—”。“推荐”和“舒适”只列出有说明的项目（没有列出的请看“最低”）。',
+  'notes.out':'已发布','notes.lead':'摘自 PocketRoles 的 CHANGELOG.md 的 v0.5.6，只列出与玩家和房主有关的内容（截至 2026-10-01）。详细内容见 CHANGELOG（日文）和 README。',
+  'home.title':'只需房主安装的职业模组','home.body':'参加者用的还是平常的 Among Us。电脑、手机、Switch 都能直接加入，什么都不用装。','home.more':'更新说明','home.open':'前往 PocketRoles','home.mods':'模组','home.news':'公告',
+  'mod.sub':'已安装 · {v}','mod.soonBody':'正在准备新的模组','home.games':'游戏','game.soonBody':'正在准备新的游戏','news.prep':'准备中','news.next':'下一版',
   'lib.status':'状态','lib.steam':'Steam 版','lib.copy':'模组用副本','lib.present':'有','lib.client':'Steam 客户端','lib.running':'运行中','lib.check':'检查更新','lib.folder':'文件夹',
   'aegis.state':'守护中','aegis.sub':'现在待机 — 开始游戏后开始监视','aegis.meta':'定义文件 v2 · 签名 OK · 检测规则 26','aegis.l1':'待机','aegis.l2':'监视中（游戏中）','aegis.l3':'踢出后 12 秒',
   'aegis.checksTitle':'检查的内容（13 项）','aegis.notTitle':'不检查的内容','aegis.not1':'只进入房间的人的电脑或手机，什么都不检查','aegis.not2':'即使在房主的电脑上，也只看 Among Us 相关（进程只对照名称）',
-  'aegis.logTitle':'最近的记录','aegis.rescan':'重新扫描','aegis.events':'记录（events.log）','aegis.ban':'Aegis 封禁管理','aegis.banNote':'只在作者的电脑上显示（有签名密钥时）','aegis.open':'打开','aegis.stop':'阻止','aegis.warnOnly':'仅提示',
+  'aegis.logTitle':'最近的记录','aegis.rescan':'重新扫描','aegis.events':'记录（events.log）','aegis.ban':'Aegis BAN 管理','aegis.banNote':'只在作者的电脑上显示（有签名密钥时）','aegis.open':'打开','aegis.stop':'阻止','aegis.warnOnly':'仅提示',
   'desk.title':'桌面上的显示（正式版计划）','desk.lead':'任务栏、通知区域、任务管理器中的显示示例。',
   'desk.tbTitle':'任务栏',
   'desk.tb1':'把固定的图标和运行中的图标合成一个（快捷方式也写入新的 ID“StarPocketGames.Client”）',
@@ -2249,7 +2234,7 @@ zh: {
   'up.title':'正在更新','up.meta':'{done} / {total} MB · {speed} MB/秒 · 剩余 {eta}','up.calc':'计算中…','up.min':'约 {n} 分钟','up.sec':'约 {n} 秒','up.valuetext':'{p}%，剩余 {eta}',
   'up.done':'更新完成。PocketRoles 已是 {v}。',
   'comm.title':'社区','comm.open':'社区与个人资料','comm.collapse':'收起社区栏','comm.expand':'展开社区栏',
-  'comm.join':'加入','comm.joinDc':'加入 Discord','comm.online':'当前在线 {n} 人','comm.onlineShort':'Discord 在线人数（示例）','comm.soon':'准备中','comm.soonDc':'Discord 正在准备中',
+  'comm.join':'加入','comm.joinDc':'加入 Discord','comm.online':'当前在线 {n} 人','comm.onlineShort':'Discord 在线人数（示例）','comm.soon':'准备中','comm.soonDc':'Discord 正在准备中','comm.noCount':'不显示在线人数',
   'comm.people':'最近的玩家','comm.rooms':'最近的房间','comm.search':'搜索','comm.streamer':'直播模式中不显示','comm.foot':'30 天后自动删除',
   'comm.none':'没有找到','comm.lock':'限制进入','comm.vipLabel':'把 {x} 设为 VIP','comm.lockLabel':'限制 {x} 进入','comm.players':'{n}/15 人','comm.yesterday':'昨天',
   'acct.open':'个人资料与菜单','acct.icon':'更换头像','acct.rename':'更改名字','acct.name':'名字','acct.nameNote':'最多 16 个字。Enter 确定，Esc 取消',
@@ -2287,12 +2272,12 @@ zh: {
   'set.clear':'立即删除最近的记录','set.clearD':'删除最近的玩家和房间列表。VIP 和限制进入的标记也会删除。','set.clearBtn':'删除',
   'set.prLang':'显示语言','set.prLangSame':'与 StarPocket Client 相同','set.prLangNote':'游戏中 PocketRoles 文字（职业说明、聊天）的语言。',
   'set.channel':'接收的版本','set.chStable':'稳定版（推荐）','set.chTest':'测试版（较新，但可能有问题）',
-  'set.place':'Among Us 的位置','set.placeBtn':'选择文件夹','set.copy':'模组用副本：','set.pathSample':'（示例）','set.notYet':'还没有','set.open':'打开',
+  'set.place':'Among Us 的位置','set.placeBtn':'选择文件夹','set.copy':'模组用副本：','set.pathSample':'（示例）','set.notYet':'还没有','set.copyHere':'将创建在：','set.open':'打开','set.moveCopy':'更改安装位置',
   'set.autoUp':'自动更新','set.autoUpD':'在 StarPocket Client 打开期间，自动安装 PocketRoles 的新版本。游戏中不会安装。','set.autoUpChk':'启用自动更新',
   'set.shortcutCap':'启动游戏','set.shortcut':'添加桌面快捷方式','set.shortcutD':'在桌面上创建 PocketRoles 的图标。只在按下时创建，不会自己创建。',
   'set.repairCap':'修复','set.repair':'修复模组用副本','set.repairD':'从 Steam 版重新制作模组用副本，并删除 BepInEx 的 interop 和 cache。下次启动需要 1〜2 分钟。Steam 版保持不变。','set.repairBtn':'修复',
   'set.tools':'工具与帮助','set.toolsD':'现在的启动器能做的事，都可以在这里使用。',
-  'set.devCap':'开发','set.dev':'使用开发版（自己编译的模组）','set.devD':'从模组的源码重新编译，用那个 DLL 游戏。关闭后回到发布版的安装。切换时 StarPocket Client 会重新打开。','set.devPath':'存放位置：','set.devNow':'现在装的 PocketRoles.dll：','toast.devOn':'切换到开发版。正在重新打开…','toast.devOff':'切回发布版。正在重新打开…',
+  'set.devCap':'开发','set.dev':'使用开发版（自己编译的模组）','set.devD':'从模组的源码重新编译，用那个 DLL 游戏。关闭后回到发布版的安装。切换时 StarPocket Client 会重新打开。','set.devPath':'存放位置：','set.devPick':'选择其他文件夹…','set.devNow':'现在装的 PocketRoles.dll：','toast.devOn':'切换到开发版。正在重新打开…','toast.devOff':'切回发布版。正在重新打开…',
   'tg.launch':'启动','tg.update':'更新','tg.help':'遇到问题','tg.folders':'文件夹','tg.aegis':'Aegis','tg.dev':'开发','tg.cli':'命令行',
   'tag.friend':'朋友','tag.dev':'开发','tag.new':'新','set.autoOf':'{x}（自动进行）',
   'legal.terms':'使用条款','legal.third':'第三方声明','legal.privacy':'隐私政策','legal.termsSoon':'使用条款（准备中）','legal.privacySoon':'隐私政策（准备中）',
@@ -2308,8 +2293,8 @@ zh: {
   'toast.avatarProto':'选择图片的窗口由应用打开（原型）。','toast.avatarReset':'已换回原来的头像（原型）。',
   'toast.vipOn':'已把 {x} 设为 VIP（示例）。','toast.vipOff':'已取消 {x} 的 VIP（示例）。','toast.lockOn':'已限制 {x} 进入（示例）。','toast.lockOff':'已取消对 {x} 的限制（示例）。',
   'toast.streamOn':'已打开直播模式。会隐藏其他人的名字和房间代码。','toast.streamOff':'已关闭直播模式。',
-  'nav.sample':'{x}（示例）','time.local':'你的时间：{t}','notes.updated':'更新','home.newsSample':'时间为示例',
-  'mod.subNone':'未安装 · 约 {size}','mod.subUpdate':'有更新 · {v} → {n}','mod.subUpdate0':'有更新 · 当前 {v}','mod.sample':'示例作品','lib.notFound':'未找到',
+  'nav.sample':'{x}（示例）','time.local':'你的时间：{t}',
+  'mod.subNone':'未安装 · 约 {size}','mod.subNone0':'未安装','mod.subUpdate':'有更新 · {v} → {n}','mod.subUpdate0':'有更新 · 当前 {v}','mod.sample':'示例作品','lib.notFound':'未找到',
   'ps.sub.install':'约 {size} · 约 {min} 分钟','ps.sub.update':'{size} · 几秒','ps.sub.needGame':'未找到 Among Us',
   'ps.needGame':'Steam 中未找到 Among Us','ps.m.needGame':'按下后打开 Steam。装好后会自动继续','ps.b.needGame':'在 Steam 安装','ps.o.needGame':'朋友：没有 Among Us（红）',
   'ps.waitGame':'请在 Steam 中安装 Among Us','ps.m.waitGame':'装好后会自动继续','ps.b.waitGame':'正在等待 Steam…','ps.pick':'装在别处时：选择文件夹',
@@ -2347,15 +2332,15 @@ en: {
   'maint.chip':'Maintenance: {t}','maint.badge':'Maintenance','sample':'Sample','maint.sampleShort':'Sample',
   'maint.title':'Paused for an Among Us update',
   'maint.body':'This is a sample. The real app tells you here when the mod can’t be used.',
-  'media.article':'Article','media.new':'What’s new in v0.5.5','media.newMeta':'Patch notes','media.aegis':'How Aegis works','media.aegisMeta':'What it watches and what it stops',
+  'media.article':'Article','media.new':'What’s new in v0.5.6','media.newMeta':'Patch notes','media.aegis':'How Aegis works','media.aegisMeta':'What it watches and what it stops',
   'sec.platforms':'Available on','plat.host':'Host (the one who creates the lobby)','plat.players':'Players (nothing to install)','plat.steam':'Steam','plat.phone':'Mobile',
   'sec.info':'Additional info','info.site':'Website','info.dev':'Developer','info.dist':'Distribution','info.date':'Release date','info.dateV':'September 2026','info.planned':'planned','info.siteV':'PocketRoles site',
   'sec.req':'System requirements','req.more':'Show more','req.less':'Show less','req.t0':'Minimum','req.t1':'Recommended','req.t2':'Comfortable',
   'req.big0':'Memory','req.big1':'Memory','req.big2':'Network (round trip)','req.net':'At or below this it shows as “near”','req.noneSr':'not stated',
-  'req.src':'Sources: the Among Us page on the Steam store (OS, CPU, memory, GPU), the README (v0.5.5, work in progress) and Valve’s notice on ending 32-bit Windows support. Anything not stated there is “—”; Recommended and Comfortable list only what is stated (for the rest, see Minimum).',
-  'notes.unreleased':'Unreleased · in progress','notes.lead':'Summarised from the v0.5.5 section of CHANGELOG.md (as of 2026-09-22).','notes.jaOnly':'Patch notes are in Japanese only for now (the CHANGELOG is Japanese).',
-  'home.eyebrow':'PocketRoles v0.5.5 · In preparation','home.title':'A stronger Aegis','home.body':'An offensive-word filter, bans that follow players across lobbies, and signed definition files.','home.more':'Learn more','home.open':'Go to PocketRoles','home.mods':'Mods','home.news':'News',
-  'mod.sub':'Installed · {v}','mod.soonBody':'A new mod is in the works','home.games':'Games','game.soonBody':'A new game is in the works','news.prep':'In preparation',
+  'req.src':'Sources: the Among Us page on the Steam store (OS, CPU, memory, GPU), the README (v0.5.6), and the game itself being 64-bit, checked against the real 2026.9.29 files on 2026-10-01. Anything not stated there is “—”; Recommended and Comfortable list only what is stated (for the rest, see Minimum).',
+  'notes.out':'Released','notes.lead':'Summarised from the v0.5.6 section of the PocketRoles CHANGELOG.md: only what matters to players and hosts (as of 2026-10-01). The details are in the CHANGELOG (Japanese) and the README.',
+  'home.title':'A roles mod only the host installs','home.body':'Players keep their usual Among Us and join from PC, mobile or Switch with nothing to install.','home.more':'Patch notes','home.open':'Go to PocketRoles','home.mods':'Mods','home.news':'News',
+  'mod.sub':'Installed · {v}','mod.soonBody':'A new mod is in the works','home.games':'Games','game.soonBody':'A new game is in the works','news.prep':'In preparation','news.next':'Next',
   'lib.status':'Status','lib.steam':'Steam version','lib.copy':'Mod copy','lib.present':'present','lib.client':'Steam client','lib.running':'running','lib.check':'Check for updates','lib.folder':'Folder',
   'aegis.state':'On guard','aegis.sub':'Idle right now — starts watching when you start the game','aegis.meta':'Definitions v2 · signature OK · 26 detection rules','aegis.l1':'Idle','aegis.l2':'Watching (in game)','aegis.l3':'12 s after a kick',
   'aegis.checksTitle':'What it checks (13 items)','aegis.notTitle':'What it never looks at','aegis.not1':'Nothing on the PCs or phones of people who just join','aegis.not2':'On the host’s PC, only what concerns Among Us (processes are matched by name only)',
@@ -2401,7 +2386,7 @@ en: {
   'up.title':'Updating','up.meta':'{done} / {total} MB · {speed} MB/s · {eta} left','up.calc':'working it out…','up.min':'about {n} min','up.sec':'about {n} s','up.valuetext':'{p}%, {eta} left',
   'up.done':'Updated. PocketRoles is now {v}.',
   'comm.title':'Community','comm.open':'Community and profile','comm.collapse':'Collapse the community panel','comm.expand':'Expand the community panel',
-  'comm.join':'Join','comm.joinDc':'Join the Discord','comm.online':'{n} online now','comm.onlineShort':'Discord members online (sample)','comm.soon':'Coming soon','comm.soonDc':'Discord is coming soon',
+  'comm.join':'Join','comm.joinDc':'Join the Discord','comm.online':'{n} online now','comm.onlineShort':'Discord members online (sample)','comm.soon':'Coming soon','comm.soonDc':'Discord is coming soon','comm.noCount':'The number online is not shown',
   'comm.people':'Players','comm.rooms':'Rooms','comm.search':'Search','comm.streamer':'Hidden in streamer mode','comm.foot':'Deleted automatically after 30 days',
   'comm.none':'Nothing found','comm.lock':'Restrict','comm.vipLabel':'Make {x} a VIP','comm.lockLabel':'Restrict {x} from joining','comm.players':'{n}/15 players','comm.yesterday':'Yesterday',
   'acct.open':'Profile and menu','acct.icon':'Change icon','acct.rename':'Change name','acct.name':'Name','acct.nameNote':'Up to 16 characters. Enter saves, Esc cancels',
@@ -2439,12 +2424,12 @@ en: {
   'set.clear':'Delete recent records now','set.clearD':'Deletes the recent players and rooms lists, including VIP and restriction marks.','set.clearBtn':'Delete',
   'set.prLang':'Display language','set.prLangSame':'Same as StarPocket Client','set.prLangNote':'The language of PocketRoles text inside the game (role descriptions, chat).',
   'set.channel':'Version channel','set.chStable':'Stable (recommended)','set.chTest':'Test (newer, may have bugs)',
-  'set.place':'Among Us location','set.placeBtn':'Choose a folder','set.copy':'Mod copy:','set.pathSample':' (sample)','set.notYet':'Not yet','set.open':'Open',
+  'set.place':'Among Us location','set.placeBtn':'Choose a folder','set.copy':'Mod copy:','set.pathSample':' (sample)','set.notYet':'Not yet','set.copyHere':'Will be created at:','set.open':'Open','set.moveCopy':'Change location',
   'set.autoUp':'Automatic updates','set.autoUpD':'While StarPocket Client is open, new PocketRoles versions are installed automatically. Never during a game.','set.autoUpChk':'Turn on automatic updates',
   'set.shortcutCap':'Launching','set.shortcut':'Add a desktop shortcut','set.shortcutD':'Puts a PocketRoles icon on your desktop. It is made only when you press this, never on its own.',
   'set.repairCap':'Repair','set.repair':'Repair the mod copy','set.repairD':'Rebuilds the mod copy from the Steam version and clears BepInEx interop and cache. The next start takes 1–2 minutes. The Steam version is left as it is.','set.repairBtn':'Repair',
   'set.tools':'Tools & help','set.toolsD':'Everything today’s launcher can do is available from here.',
-  'set.devCap':'Developer','set.dev':'Use the developer build (the mod you build yourself)','set.devD':'Rebuilds the mod from its source and plays with that DLL. Off goes back to the released install. Switching reopens StarPocket Client.','set.devPath':'Folder:','set.devNow':'PocketRoles.dll in the copy now:','toast.devOn':'Switching to the developer build. Reopening…','toast.devOff':'Back to the released build. Reopening…',
+  'set.devCap':'Developer','set.dev':'Use the developer build (the mod you build yourself)','set.devD':'Rebuilds the mod from its source and plays with that DLL. Off goes back to the released install. Switching reopens StarPocket Client.','set.devPath':'Folder:','set.devPick':'Choose another folder…','set.devNow':'PocketRoles.dll in the copy now:','toast.devOn':'Switching to the developer build. Reopening…','toast.devOff':'Back to the released build. Reopening…',
   'tg.launch':'Launch','tg.update':'Updates','tg.help':'Help','tg.folders':'Folders','tg.aegis':'Aegis','tg.dev':'Developer','tg.cli':'Command line',
   'tag.friend':'Friend','tag.dev':'Dev','tag.new':'New','set.autoOf':'{x} (done automatically)',
   'legal.terms':'Terms of use','legal.third':'Third-party notices','legal.privacy':'Privacy policy','legal.termsSoon':'Terms of use (coming soon)','legal.privacySoon':'Privacy policy (coming soon)',
@@ -2460,8 +2445,8 @@ en: {
   'toast.avatarProto':'The app opens the picture picker (prototype).','toast.avatarReset':'Back to the icon (prototype).',
   'toast.vipOn':'{x} is now a VIP (sample).','toast.vipOff':'{x} is no longer a VIP (sample).','toast.lockOn':'{x} is restricted from joining (sample).','toast.lockOff':'{x} is no longer restricted (sample).',
   'toast.streamOn':'Streamer mode on. Other people’s names and room codes are hidden.','toast.streamOff':'Streamer mode off.',
-  'nav.sample':'{x} (sample)','time.local':'Your time: {t}','notes.updated':'Updated','home.newsSample':'times are samples',
-  'mod.subNone':'Not installed · about {size}','mod.subUpdate':'Update available · {v} → {n}','mod.subUpdate0':'Update available · {v} installed','mod.sample':'Sample title','lib.notFound':'Not found',
+  'nav.sample':'{x} (sample)','time.local':'Your time: {t}',
+  'mod.subNone':'Not installed · about {size}','mod.subNone0':'Not installed','mod.subUpdate':'Update available · {v} → {n}','mod.subUpdate0':'Update available · {v} installed','mod.sample':'Sample title','lib.notFound':'Not found',
   'ps.sub.install':'About {size} · about {min} min','ps.sub.update':'{size} · a few seconds','ps.sub.needGame':'Among Us not found',
   'ps.needGame':'Among Us isn’t in Steam','ps.m.needGame':'Press to open Steam. It carries on by itself once Among Us is in','ps.b.needGame':'Get it on Steam','ps.o.needGame':'Friend: no Among Us (red)',
   'ps.waitGame':'Install Among Us in Steam','ps.m.waitGame':'This carries on by itself once it’s in','ps.b.waitGame':'Waiting for Steam…','ps.pick':'Somewhere else? Pick the folder',
@@ -2497,8 +2482,8 @@ const L = o => (o && typeof o === 'object') ? (o[lang] ?? (lang === 'zh' ? o['zh
 /* ---------- data ---------- */
 const REQ = [
   { k:{ja:'OS',zh:'操作系统',en:'OS'}, v:[
-    {ja:'Windows 10（32 bit）。ホストできるのは Windows の Steam 版だけ。※ Steam 自体は 2026-01-01 で 32 bit の Windows のサポートを終了（動き続けるが更新なし。Valve の告知）',zh:'Windows 10（32 位）。只有 Windows 的 Steam 版可以当房主。※ Steam 本身已于 2026-01-01 停止支持 32 位 Windows（仍可运行但不再更新。Valve 公告）',en:'Windows 10 (32-bit). Hosting needs the Steam version on Windows. Note: Steam itself ended support for 32-bit Windows on 2026-01-01 (it keeps running but gets no updates; Valve’s notice)'},
-    {ja:'Windows 10（64 bit）',zh:'Windows 10（64 位）',en:'Windows 10 (64-bit)'}, null]},
+    {ja:'Windows 10（64 bit）。ホストできるのは Windows の Steam 版だけ。※ 2026-09-29 の Among Us 2026.9.29 から、ゲーム本体が 64 bit になりました。32 bit の Windows では Among Us そのものが起動しません',zh:'Windows 10（64 位）。只有 Windows 的 Steam 版可以当房主。※ 自 2026-09-29 的 Among Us 2026.9.29 起，游戏本体已改为 64 位。在 32 位 Windows 上 Among Us 本身无法启动',en:'Windows 10 (64-bit). Hosting needs the Steam version on Windows. Note: since Among Us 2026.9.29 (2026-09-29) the game itself is 64-bit, so it no longer starts at all on 32-bit Windows'},
+    {ja:'Windows 10（64 bit）以降',zh:'Windows 10（64 位）及以上',en:'Windows 10 (64-bit) or newer'}, null]},
   { k:{ja:'CPU',zh:'CPU',en:'CPU'}, v:[
     {ja:'Intel i3-4330',zh:'Intel i3-4330',en:'Intel i3-4330'},
     {ja:'Intel i3-4330（必要と同じ）',zh:'Intel i3-4330（与最低相同）',en:'Intel i3-4330 (same as minimum)'}, null]},
@@ -2508,13 +2493,13 @@ const REQ = [
     {ja:'Steam 版に加えて、MOD 用のコピーに約 1 GB（Steam 版はそのまま残る）',zh:'除 Steam 版外，模组用副本约 1 GB（Steam 版保持不变）',en:'About 1 GB for the mod copy, on top of the Steam version (which stays untouched)'}, null,
     {ja:'ログ用の空き。logs が 2 GB を超えると表示がオレンジになりお知らせ（自動では消さない）',zh:'日志的空间。logs 超过 2 GB 时显示变橙并提示（不会自动删除）',en:'Room for logs. Past 2 GB the size turns orange and you get a notice (nothing is deleted automatically)'}]},
   { x:1, k:{ja:'ゲーム',zh:'游戏',en:'Game'}, v:[
-    {ja:'Among Us 2026.8.18（Steam 版、本体は 32 bit）。版が違うと MOD は自動で無効',zh:'Among Us 2026.8.18（Steam 版，游戏本体 32 位）。版本不同时模组自动停用',en:'Among Us 2026.8.18 (Steam; the game itself is 32-bit). On any other version the mod turns itself off'}, null, null]},
+    {ja:'Among Us 2026.9.29（Steam 版、本体は 64 bit）。版が違うと MOD は自動で無効',zh:'Among Us 2026.9.29（Steam 版，游戏本体 64 位）。版本不同时模组自动停用',en:'Among Us 2026.9.29 (Steam; the game itself is 64-bit). On any other version the mod turns itself off'}, null, null]},
   { x:1, k:{ja:'Steam',zh:'Steam',en:'Steam'}, v:[
     {ja:'ゲームを起動する時に Steam クライアントが起動していること',zh:'启动游戏时 Steam 客户端需要在运行',en:'The Steam client must be running when you start the game'}, null, null]},
   { x:1, k:{ja:'MOD 実行環境',zh:'模组运行环境',en:'Mod runtime'}, v:[
-    {ja:'BepInEx 6.0.0-be.735（Unity.IL2CPP / win-x86）。StarPocket Client が自動でダウンロード',zh:'BepInEx 6.0.0-be.735（Unity.IL2CPP / win-x86）。StarPocket Client 会自动下载',en:'BepInEx 6.0.0-be.735 (Unity.IL2CPP / win-x86). StarPocket Client downloads it for you'}, null, null]},
+    {ja:'BepInEx 6.0.0-be.735（Unity.IL2CPP / win-x64）。StarPocket Client が自動でダウンロード',zh:'BepInEx 6.0.0-be.735（Unity.IL2CPP / win-x64）。StarPocket Client 会自动下载',en:'BepInEx 6.0.0-be.735 (Unity.IL2CPP / win-x64). StarPocket Client downloads it for you'}, null, null]},
   { x:1, k:{ja:'アプリ',zh:'应用',en:'App'}, v:[
-    {ja:'今のランチャー: PowerShell 5.1 と .NET Framework（Windows 10 / 11 に標準）。管理者権限は不要。StarPocket Client（予定）: Windows 10 1903 以降（.NET Framework 4.8 が最初から入っている版。32 bit / 64 bit どちらも）と WebView2',zh:'现在的启动器：PowerShell 5.1 和 .NET Framework（Windows 10 / 11 自带），不需要管理员权限。StarPocket Client（计划）：Windows 10 1903 及以后（自带 .NET Framework 4.8 的版本，32 位和 64 位都可以）和 WebView2',en:'Today’s launcher: PowerShell 5.1 and .NET Framework (built into Windows 10 / 11), no admin rights. StarPocket Client (planned): Windows 10 1903 or later (the versions that ship .NET Framework 4.8; 32-bit or 64-bit) and WebView2'}, null, null]},
+    {ja:'StarPocket Client: Windows 10 1903 以降（.NET Framework 4.8 が最初から入っている版）と Microsoft Edge WebView2 ランタイム（無い時は、起動した時に入れ方を案内）。管理者権限は不要',zh:'StarPocket Client：Windows 10 1903 及以后（自带 .NET Framework 4.8 的版本）和 Microsoft Edge WebView2 运行时（没有时，启动时会说明安装方法）。不需要管理员权限',en:'StarPocket Client: Windows 10 1903 or later (the versions that ship .NET Framework 4.8) and the Microsoft Edge WebView2 Runtime (if it is missing, the app says how to get it when it starts). No admin rights needed'}, null, null]},
   { x:1, k:{ja:'インターネット',zh:'网络',en:'Internet'}, v:[
     {ja:'ダウンロード・更新チェック・チャット翻訳に必要。Aegis の定義もアプリを開くたびに GitHub から。MOD の zip を同じフォルダに置けばオフラインでも導入できる',zh:'下载、检查更新、聊天翻译需要联网。Aegis 定义也在每次打开应用时从 GitHub 获取。把模组 zip 放在同一文件夹也能离线安装',en:'Needed for downloads, update checks and chat translation. Aegis definitions also come from GitHub each time the app opens. With the mod zip in the same folder you can install offline'}, null,
     {ja:'近いサーバー。wire RTT 40 ms 以下で「近い」と表示（東京は 8〜10 ms）',zh:'近的服务器。wire RTT 40 ms 以下显示为“近”（东京 8〜10 ms）',en:'A near server: wire RTT of 40 ms or less shows as “near” (Tokyo is 8–10 ms)'}]},
@@ -2525,7 +2510,7 @@ const REQ = [
     {ja:'セキュアブートと TPM 2.0 をオン',zh:'开启安全启动和 TPM 2.0',en:'Secure Boot and TPM 2.0 on'},
     {ja:'脆弱ドライバーの遮断を有効（Windows 11 22H2 以降は既定で有効）',zh:'启用易受攻击驱动程序阻止列表（Windows 11 22H2 以后默认启用）',en:'Vulnerable driver blocklist on (default on Windows 11 22H2 and later)'}]},
   { x:1, k:{ja:'保存場所',zh:'保存位置',en:'Install location'}, v:[
-    {ja:'デスクトップが OneDrive でバックアップされている時は自動で %LOCALAPPDATA%\\PocketRoles\\Among Us PocketRoles に。-GameDir で好きなフォルダも選べる',zh:'桌面由 OneDrive 备份时自动放到 %LOCALAPPDATA%\\PocketRoles\\Among Us PocketRoles。也可以用 -GameDir 指定文件夹',en:'If your Desktop is backed up by OneDrive, it goes to %LOCALAPPDATA%\\PocketRoles\\Among Us PocketRoles automatically. -GameDir picks any folder'}, null, null]},
+    {ja:'デスクトップが OneDrive でバックアップされている時は自動で %LOCALAPPDATA%\\PocketRoles\\Among Us PocketRoles に。設定（PocketRoles → Among Us の場所）の「場所を変える」で好きなフォルダも選べる',zh:'桌面由 OneDrive 备份时自动放到 %LOCALAPPDATA%\\PocketRoles\\Among Us PocketRoles。也可以在设置（PocketRoles → Among Us 的位置）中用“更改安装位置”选择文件夹',en:'If your Desktop is backed up by OneDrive, it goes to %LOCALAPPDATA%\\PocketRoles\\Among Us PocketRoles automatically. Settings (PocketRoles → Among Us location) → Change location picks any folder'}, null, null]},
   { x:1, k:{ja:'参加者',zh:'参加者',en:'Players'}, v:[
     {ja:'何も要らない。PC・スマホ・Switch のどれでも参加できる',zh:'什么都不需要。电脑、手机、Switch 都能参加',en:'Nothing needed. They can join from PC, mobile or Switch'}, null, null]}
 ];
@@ -2534,15 +2519,67 @@ const REQ = [
    (the インターネット row below). A "—" with a memory label over a network note looked broken (the owner, 2026-09-24). */
 const REQ_BIG = [['1 GB','req.big0'],['4 GB','req.big1'],['40 ms','req.big2','req.net']];
 
-/* news: times are ISO 8601 in UTC (the times are samples; the dates follow CHANGELOG.md) */
+/* news: the PocketRoles releases, newest first (titles from CHANGELOG.md of the PocketRoles repository).
+   at = when the GitHub release was published, ISO 8601 in UTC (the screen shows UTC and, on hover / focus / tap, the
+   viewer's own time); at:null = not out yet (準備中), and v:null = its number is not decided yet (news.next).
+   notes:true = the patch notes tab has that version: only those rows are buttons (renderNews). The others have
+   nothing behind them in this page, so they are plain rows - no link, no "prototype" notice, nothing sent anywhere.
+   A new release: add its row on top here, and move notes:true when the patch notes tab changes to it (NOTES below).
+   v0.5.6 (2026-10-01, the owner: MOD v0.5.6 と Client v1.1.2 は同じ日に一緒に出す): its time is not known until the
+   GitHub release is published, so it is ONE line, V056_AT. While it is null, the row and the patch notes say 準備中;
+   tools\uitest\checks.js and src\SelfTest\ShellSelfTests.cs build what they expect from this same line, so they need no
+   change on the day. */
+/* 公開の日に直すのはこの 1 行だけ: PocketRoles v0.5.6 の GitHub リリースを公開した時刻（UTC、秒まで。例 '2026-10-03T09:15:00Z'）。
+   GitHub の API（releases/tags/v0.5.6）の published_at を、そのまま写す */
+const V056_AT = null;
 const NEWS = [
-  { at:null, v:'v0.5.5', notes:true, t:{ja:'v0.5.5 を準備中: NG ワードの対策、部屋をまたぐ BAN、Aegis の判定値を GitHub から更新',zh:'正在准备 v0.5.5：不当言论对策、跨房间封禁、从 GitHub 更新 Aegis 判定值',en:'v0.5.5 in preparation: offensive-word filter, cross-lobby bans, Aegis values updated from GitHub'} },
-  { at:'2026-09-21T11:30:00Z', v:'v0.5.4', t:{ja:'Aegis のトレイアプリと起動前の検査',zh:'Aegis 托盘程序与启动前检查',en:'Aegis tray app and pre-launch check'} },
-  { at:'2026-09-21T02:10:00Z', v:'v0.5.3', t:{ja:'Aegis（イージス）アンチチートを追加',zh:'新增 Aegis 反作弊',en:'Aegis anti-cheat added'} },
-  { at:'2026-09-17T12:00:00Z', v:'v0.5.2', t:{ja:'次の試合の役を他の人にも指定できる /next',zh:'/next 可以指定其他人下一局的角色',en:'/next can now set the next role for other players'} },
-  { at:'2026-09-14T09:40:00Z', v:'v0.5.1', t:{ja:'インポスターの人数を設定どおりに補充',zh:'按设置补足伪装者人数',en:'Impostor count now filled as configured'} },
-  { at:'2026-09-13T08:00:00Z', v:'v0.5.0', t:{ja:'役職を 9 つ追加',zh:'新增 9 个职业',en:'9 new roles'} }
+  { at:V056_AT, v:'v0.5.6', notes:true, t:{ja:'Among Us 2026.9.29（64 bit 版）に対応、本体の新しい役職「インフルエンサー」にも対応',zh:'支持 Among Us 2026.9.29（64 位版），并支持游戏本体的新职业“网红”',en:'Support for Among Us 2026.9.29 (64-bit) and for the game’s new role, the Influencer'} },
+  { at:'2026-09-23T10:00:09Z', v:'v0.5.5', t:{ja:'NG ワードの対策、部屋をまたぐ BAN、Aegis の判定値を GitHub から更新',zh:'不当言论对策、跨房间限制进入、从 GitHub 更新 Aegis 判定值',en:'Offensive-word filter, cross-lobby bans, Aegis values updated from GitHub'} },
+  { at:'2026-09-21T12:20:18Z', v:'v0.5.4', t:{ja:'Aegis のトレイアプリと起動前の検査',zh:'Aegis 托盘程序与启动前检查',en:'Aegis tray app and pre-launch check'} },
+  { at:'2026-09-21T10:20:47Z', v:'v0.5.3', t:{ja:'Aegis（イージス）アンチチートを追加',zh:'新增 Aegis 反作弊',en:'Aegis anti-cheat added'} },
+  { at:'2026-09-17T08:43:13Z', v:'v0.5.2', t:{ja:'次の試合の役を他の人にも指定できる /next',zh:'/next 可以指定其他人下一局的角色',en:'/next can now set the next role for other players'} },
+  { at:'2026-09-14T09:45:27Z', v:'v0.5.1', t:{ja:'インポスターの人数を設定どおりに補充',zh:'按设置补足伪装者人数',en:'Impostor count now filled as configured'} },
+  { at:'2026-09-13T13:24:27Z', v:'v0.5.0', t:{ja:'役職を 9 つ追加',zh:'新增 9 个职业',en:'9 new roles'} }
 ];
+
+/* the patch notes tab: the version of the NEWS row with notes:true, in all three languages (2026-10-01: until v0.5.5 the
+   tab was Japanese only). From the 0.5.6 section of the PocketRoles CHANGELOG.md, only what a player or a host notices;
+   the CHANGELOG has the rest. Chinese uses the game's own words (伪装者・船员・网红・守护天使・跳过). Text between two
+   backquotes is drawn as code (notesText). A new release: replace v and the groups together with the NEWS row. */
+const NOTES = { v:'v0.5.6', groups:[
+  { icon:'i-monitor', h:{ja:'Among Us 2026.9.29（64 bit）',zh:'Among Us 2026.9.29（64 位）',en:'Among Us 2026.9.29 (64-bit)'}, items:[
+    { b:{ja:'BepInEx を 64 bit 用に入れ替え',zh:'把 BepInEx 换成 64 位版',en:'BepInEx switched to 64-bit'},
+      s:{ja:'— 本体が 2026.9.29 から 64 bit になり、32 bit 用の BepInEx のままでは MOD が読み込まれません（エラーも出ません）。BepInEx 6.0.0-be.735 の win-x64 にしました。',
+         zh:'— 游戏本体从 2026.9.29 起变为 64 位，继续用 32 位的 BepInEx 时模组不会加载（也不会报错）。现在使用 BepInEx 6.0.0-be.735 的 win-x64 版。',
+         en:'— the game is 64-bit since 2026.9.29, and with the 32-bit BepInEx the mod simply does not load (no error either). It is now BepInEx 6.0.0-be.735 win-x64.'} },
+    { b:{ja:'今までのランチャーは「更新を確認」だけで直る',zh:'原来的启动器只要按“检查更新”即可修复',en:'The old launcher: just press “Check for updates”'},
+      s:{ja:'— MOD の zip に 64 bit 用の BepInEx を入れました（約 35 MB）。zip を自分で落とす人は、展開しないでランチャーのフォルダに置いて「インストール」を押してください。',
+         zh:'— 模组的 zip 中已包含 64 位的 BepInEx（约 35 MB）。自己下载 zip 的人，请不要解压，直接放到启动器所在的文件夹，再点“安装”。',
+         en:'— the mod zip now carries the 64-bit BepInEx (about 35 MB). If you download the zip yourself, do not extract it: put it in the launcher’s folder and press “Install”.'} },
+    { b:{ja:'StarPocket Client は「修復」で直る',zh:'StarPocket Client 按“修复”即可',en:'StarPocket Client: press “Repair”'},
+      s:{ja:'— v1.1.2 は、種類の違う BepInEx を自分で見つけて、状態の欄に「修復が必要です」と出します。「修復」で 64 bit 用に入れ替わります（「更新を確認」で v0.5.6 を入れても入れ替わります）。',
+         zh:'— v1.1.2 会自己发现种类不同的 BepInEx，并在状态栏显示“需要修复”。按“修复”即可换成 64 位版（用“检查更新”装上 v0.5.6 也会换好）。',
+         en:'— v1.1.2 notices a BepInEx of the wrong kind itself, and the status line says “Needs a repair”. “Repair” switches it to 64-bit (so does putting in v0.5.6 with “Check for updates”).'} },
+    { b:{ja:'32 bit の Windows では Among Us 自体が動かなくなりました',zh:'32 位的 Windows 上 Among Us 本身已无法运行',en:'Among Us itself no longer runs on 32-bit Windows'},
+      s:{ja:'— 本体の変更です（MOD では直せません）。',zh:'— 这是游戏本体的变更（模组无法解决）。',en:'— a change in the game itself (the mod cannot fix it).'} }
+  ]},
+  { icon:'i-users', h:{ja:'本体の新しい役職',zh:'游戏本体的新职业',en:'The game’s new role'}, items:[
+    { b:{ja:'インフルエンサーに対応',zh:'支持“网红”',en:'The Influencer is supported'},
+      s:{ja:'— 死んだクルーが、生きているクルーに画像を送れる本体の新しい役職です。PocketRoles の役職の人がインフルエンサーになることはありません（守護天使と同じ扱い）。',
+         zh:'— 游戏本体的新职业：死亡的船员可以给活着的船员发送图片。拥有 PocketRoles 职业的人不会变成网红（与守护天使相同）。',
+         en:'— the game’s new role: a dead Crewmate can send images to living Crewmates. Nobody with a PocketRoles role becomes the Influencer (as with the Guardian Angel).'} },
+    { b:{ja:'インフルエンサーを使った人が通報されないように',zh:'使用网红的人不会被误举报',en:'Using the Influencer does not get anyone reported'},
+      s:{ja:'— 本体の新しい通信（RPC 67）を、ふつうの Among Us の通信の一覧に入れました。',zh:'— 已把游戏本体的新通信（RPC 67）加入普通 Among Us 的通信列表。',en:'— the game’s new message (RPC 67) is now on the list of plain Among Us messages.'} }
+  ]},
+  { icon:'i-check', h:{ja:'修正・その他',zh:'修复与其他',en:'Fixes and more'}, items:[
+    { b:{ja:'タイトル画面に StarPocket Client の案内',zh:'标题画面上的 StarPocket Client 介绍',en:'A line about StarPocket Client on the title screen'},
+      s:{ja:'— StarPocket Client で入れていない人にだけ、1 行出します。',zh:'— 只对没有用 StarPocket Client 安装的人显示一行。',en:'— shown only to people who did not install with StarPocket Client.'} },
+    { b:{ja:'試験用のコマンド `/dummy`（新しく追加）',zh:'新增测试用指令 `/dummy`',en:'New test command: `/dummy`'},
+      s:{ja:'— ダミーを出して、ひとりでも試合や会議を試せます。`/dummy vote` で投票のしかたも選べます（`host` ホストと同じ人に入れる・`skip` 全員スキップ・`random`）。ローカル（LAN）とフリープレイだけで、オンラインの部屋では使えません。',
+         zh:'— 可以添加假人，一个人也能试玩对局和会议。还可以用 `/dummy vote` 选择投票方式（`host` 跟随房主投票、`skip` 全部跳过、`random`）。只能在本地（LAN）和自由模式中使用，在线房间中无法使用。',
+         en:'— adds dummies so you can try a game and a meeting on your own. `/dummy vote` also sets how they vote (`host` votes the same as the host, `skip` everyone skips, `random`). Local (LAN) and Freeplay only; not available in an online lobby.'} }
+  ]}
+]};
 
 /* sample of the signed status.json (SPEC 4). Every time is ISO 8601 in UTC ("Z"); the screen shows UTC and,
    on hover / focus / tap, the viewer's own PC time. The values are samples. */
@@ -2606,13 +2643,16 @@ const SAMPLE_TITLES = [
 
 const CHECKS = [
   { n:{ja:'Aegis エンジン（定義の署名）',zh:'Aegis 引擎（定义签名）',en:'Aegis engine (definition signature)'} },
-  { n:{ja:'Among Us（版が 2026.8.18 か）',zh:'Among Us（版本是否为 2026.8.18）',en:'Among Us (is it 2026.8.18)'} },
+  /* v1.4: ここに版番号を書き写さない。この行の名前は、アプリが本物の行（row.title）を渡すまでの控えでしかなく、
+     書き写すとゲームが更新されるたびに古い番号が一瞬出ます（設定の「V1.0.0（見本）」と同じ壊れ方）。
+     本物の版は、アプリが detail に「2026.9.29（対応版）」の形で入れてきます。 */
+  { n:{ja:'Among Us（対応している版かどうか）',zh:'Among Us（是否为支持的版本）',en:'Among Us (is it a supported version)'} },
   { n:{ja:'BepInEx（core と winhttp.dll）',zh:'BepInEx（core 与 winhttp.dll）',en:'BepInEx (core and winhttp.dll)'} },
   { n:{ja:'MOD 本体の整合性',zh:'模组本体完整性',en:'Mod file integrity'}, stop:1 },
   { n:{ja:'ほかのプラグイン',zh:'其他插件',en:'Other plugins'}, stop:1 },
   { n:{ja:'ゲームへの注入 DLL',zh:'注入游戏的 DLL',en:'DLLs injected into the game'}, stop:1 },
   { n:{ja:'Aegis の設定',zh:'Aegis 设置',en:'Aegis settings'} },
-  { n:{ja:'BAN リスト',zh:'封禁列表',en:'Ban list'} },
+  { n:{ja:'BAN リスト',zh:'限制进入名单',en:'Ban list'} },
   { n:{ja:'セキュアブート',zh:'安全启动',en:'Secure Boot'} },
   { n:{ja:'TPM 2.0',zh:'TPM 2.0',en:'TPM 2.0'} },
   { n:{ja:'カーネルの保護（テスト署名・デバッグ）',zh:'内核保护（测试签名、调试）',en:'Kernel protection (test signing, debug)'}, stop:1 },
@@ -2745,7 +2785,7 @@ const TOOLS = [
     t:{ja:'通知',zh:'通知',en:'Notifications'},
     d:{ja:'右下に自前の通知（最大 4 枚）。応答不可モードでも見える。',zh:'在右下角显示自己的通知（最多 4 个），勿扰模式下也能看到。',en:'Its own notifications in the bottom-right corner (up to 4), visible in Do Not Disturb.'} },
   { icon:'i-lock', tag:'dev', act:OPEN, cmd:'aegis.banConsole',
-    t:{ja:'Aegis BAN 管理',zh:'Aegis 封禁管理',en:'Aegis ban console'},
+    t:{ja:'Aegis BAN 管理',zh:'Aegis BAN 管理',en:'Aegis ban console'},
     d:{ja:'作者の PC だけ（署名の鍵がある時）。デスクトップにショートカット。',zh:'只在作者的电脑上（有签名密钥时）。桌面上有快捷方式。',en:'Only on the author’s PC (when the signing key is there). Has a desktop shortcut.'} }
  ]},
  { id:'dev', name:'tg.dev', items:[
@@ -2762,17 +2802,17 @@ const TOOLS = [
     d:{ja:'--action Install / Check / Report / Status（今の -Action も使える）。成功で終了コード 0、失敗は 1。',zh:'--action Install / Check / Report / Status（现在的 -Action 也能用）。成功返回 0，失败返回 1。',en:'--action Install / Check / Report / Status (today’s -Action works too). Exit code 0 on success, 1 on failure.'} },
   { icon:'i-term', act:HOW, cmd:'cliHelp',
     t:{ja:'コマンドラインと環境変数',zh:'命令行与环境变量',en:'Command line and environment variables'},
-    d:{ja:'--game-dir・--steam-dir・--source-dir・--desktop-dir・--cache-dir（場所を変える）、--language ja|zh-CN|en、--friend（友達モードにする）、--autolaunch、--windowed、--action。今の -GameDir などの書き方も使える。環境変数 POCKETROLES_GAMEDIR・POCKETROLES_STEAMDIR。',zh:'--game-dir、--steam-dir、--source-dir、--desktop-dir、--cache-dir（更改位置）、--language ja|zh-CN|en、--friend（切换为朋友模式）、--autolaunch、--windowed、--action。现在的 -GameDir 等写法也能用。环境变量 POCKETROLES_GAMEDIR、POCKETROLES_STEAMDIR。',en:'--game-dir, --steam-dir, --source-dir, --desktop-dir, --cache-dir (change locations), --language ja|zh-CN|en, --friend (friend mode), --autolaunch, --windowed, --action. Today’s -GameDir style works too. Environment variables POCKETROLES_GAMEDIR and POCKETROLES_STEAMDIR.'} }
+    d:{ja:'--game-dir・--steam-dir・--desktop-dir（場所を変える）、--language ja|zh-CN|en、--friend（友達モードにする）、--autolaunch、--windowed、--action、--uninstall（--quiet で確認なし）、--verify-download。今の -GameDir などの書き方も使える。環境変数 POCKETROLES_GAMEDIR・POCKETROLES_STEAMDIR。',zh:'--game-dir、--steam-dir、--desktop-dir（更改位置）、--language ja|zh-CN|en、--friend（切换为朋友模式）、--autolaunch、--windowed、--action、--uninstall（加 --quiet 则不确认）、--verify-download。现在的 -GameDir 等写法也能用。环境变量 POCKETROLES_GAMEDIR、POCKETROLES_STEAMDIR。',en:'--game-dir, --steam-dir, --desktop-dir (change locations), --language ja|zh-CN|en, --friend (friend mode), --autolaunch, --windowed, --action, --uninstall (--quiet: no confirmation), --verify-download. Today’s -GameDir style works too. Environment variables POCKETROLES_GAMEDIR and POCKETROLES_STEAMDIR.'} }
  ]}
 ];
 /* the other two: pickSteam → "Among Us location", syncSteam → "Repair" (both on the PocketRoles page) */
-const EXTRA_LABEL = { pickSteam:{ja:'Among Us の場所',zh:'Among Us 的位置',en:'Among Us location'}, syncSteam:{ja:'MOD 用のコピーを直す',zh:'修复模组用副本',en:'Repair the mod copy'} };
+const EXTRA_LABEL = { pickSteam:{ja:'Among Us の場所',zh:'Among Us 的位置',en:'Among Us location'}, syncSteam:{ja:'MOD 用のコピーを直す',zh:'修复模组用副本',en:'Repair the mod copy'}, moveCopy:{ja:'MOD 用のコピーの場所',zh:'模组用副本的位置',en:'Mod copy location'} };
 const cmdLabel = cmd => { for (const g of TOOLS) for (const i of g.items) if (i.cmd === cmd) return L(i.t); return EXTRA_LABEL[cmd] ? L(EXTRA_LABEL[cmd]) : cmd; };
 
 /* ---------- bridge to the C# host (WebView2) ---------- */
 /* Every invoke resolves exactly once: with the host's result, or {ok:false, timeout:true} when the host stays silent.
    Long tasks answer only when they finish (progress comes as events), so they get a long timeout. */
-const LONG_CMDS = new Set(['install', 'launch', 'launchWindowed', 'launchVanilla', 'checkUpdate', 'syncSteam', 'rebuild', 'devUpdate', 'makeReport', 'exportOne', 'uninstall', 'pickSteam', 'aegis.rescan', 'aegis.scanOnly', 'profile.pickImage']);
+const LONG_CMDS = new Set(['install', 'launch', 'launchWindowed', 'launchVanilla', 'checkUpdate', 'syncSteam', 'rebuild', 'devUpdate', 'makeReport', 'exportOne', 'uninstall', 'pickSteam', 'moveCopy', 'aegis.rescan', 'aegis.scanOnly', 'profile.pickImage']);
 /* how long the page waits for an answer; the UI test shortens these so it can watch what a wait that runs out does */
 const INVOKE_MS = { long:30 * 60 * 1000, short:15 * 1000 };
 const pending = new Map();
@@ -2899,7 +2939,9 @@ document.addEventListener('pointerdown', e => {
 });
 
 /* ---------- views ---------- */
-let current = 'game';
+/* every start opens on home (the owner, 2026-10-01: 「クライアント起動していきなり MOD のところ開く必要ある？ホームが標準じゃダメ？」).
+   The MOD page comes up from home, the rail, the library, and the install / play / update / repair buttons (FLOW). */
+let current = 'home';
 function show(view){
   current = view;
   for (const v of $$('.view')) {
@@ -2978,7 +3020,7 @@ function selectTab(id){
      パッチノートはたたまれた帯のすぐ下の見出しから、概要は絵の頭から読み始められる。同じタブをもう一度押しても動かさない */
   const view = $('#view-game'), tabKey = id === 'tab-pn' ? 'pn' : 'ov';
   if (view.dataset.tab !== tabKey) { view.dataset.tab = tabKey; view.scrollTop = 0; }
-  if (id === 'tab-pn') { $('#notesDot').hidden = true; if (!notesSeen()) { store.set('sp.seenNotes', 'v0.5.5'); renderRail(); } }
+  if (id === 'tab-pn') { $('#notesDot').hidden = true; if (!notesSeen()) { store.set('sp.seenNotes', NOTES.v); renderRail(); } }
   placeInd(false); syncThumb(false);
 }
 $('#gameTabs').addEventListener('click', e => { const tab = e.target.closest('[role="tab"]'); if (tab) selectTab(tab.id); });
@@ -2987,12 +3029,22 @@ $('#gameTabs').addEventListener('keydown', e => {
   const tabs = $$('#gameTabs [role="tab"]'); const i = tabs.indexOf(document.activeElement); if (i < 0) return;
   const n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; selectTab(n.id); n.focus(); e.preventDefault();
 });
-if ((store.get('sp.seenNotes') || store.get('seenNotes')) === 'v0.5.5') $('#notesDot').hidden = true;
+if ((store.get('sp.seenNotes') || store.get('seenNotes')) === NOTES.v) $('#notesDot').hidden = true;
 addEventListener('resize', () => placeInd(true));
 
 /* ---------- play button: state (today's warning line) + primary action ---------- */
 const playBtn = $('#playBtn'), playLabel = $('#playLabel'), playFill = $('#playFill'), playIconUse = $('#playIcon use');
-const fillSp = new Spring({ tension:170, friction:26, value:0, onUpdate:p => { playFill.style.width = (clamp01(p) * 100) + '%'; } });
+/* 何％か分からない作業の「流れる帯」。flowSp より **先に** 置きます: onUpdate はばねが動くたびに走るので、
+   宣言より前に一度でも走ると ReferenceError で止まります。 */
+let flowing = false;
+/* 流れる帯の間は幅を書きません（CSS の 100% を、その場の inline style が上書きしてしまうため） */
+const fillSp = new Spring({ tension:170, friction:26, value:0, onUpdate:p => { if (!flowing) playFill.style.width = (clamp01(p) * 100) + '%'; } });
+function flowOn(on){
+  if (flowing === !!on) return;
+  flowing = !!on;
+  playFill.classList.toggle('flow', flowing);
+  if (!flowing) { playFill.style.width = '0%'; fillSp.set(0); }
+}
 /* one entry per warning line of the current launcher (friend: red / orange / green, dev: red / orange / green) + two new ones */
 const PSTATE = {
   ready:      { icon:'i-play',     dot:'',       btn:'play' },
@@ -3012,7 +3064,8 @@ const TASKS = {
   sync:      { cmd:'syncSteam',   steps:['s.sy1', 's.sy2'] },
   update:    { cmd:'checkUpdate', steps:['s.up1', 's.up2'] },
   devUpdate: { cmd:'devUpdate',   steps:['s.dv1', 's.dv2', 's.dv3'] },
-  rebuild:   { cmd:'rebuild',     steps:['s.rb1'] }
+  /* flow: コンパイラは「何％」を言いません。1/1 のまま 1〜2 分かかるので、棒を流します（2026-09-26） */
+  rebuild:   { cmd:'rebuild',     steps:['s.rb1'], flow:true }
 };
 let pstate = 'ready', busy = false, running = false, plogRows = [], busyKey = null;
 const playSub = $('#playSub');
@@ -3072,6 +3125,7 @@ function setPstate(k){
   if (busy || !PSTATE[k] || PSTATE[k].noSel) return;
   pstate = k; plogRows = k === 'failed' ? sampleFailedLog() : [];
   $('#stateSel').value = k; renderPlay();
+  renderHomeState();   /* home's state line names the states that need doing something (HOME_ATTN) */
 }
 
 /* runs a task once on the host; the prototype plays the steps itself */
@@ -3080,7 +3134,13 @@ async function runTask(name){
   const task = TASKS[name]; busy = true;
   const from = task.done || 0;
   plogRows = task.steps.map((k, i) => ({ k, st: i < from ? 'skip' : '' }));
-  playBtn.setAttribute('aria-busy', 'true'); renderPlay();
+  playBtn.setAttribute('aria-busy', 'true');
+  /* ボタンの文は、始まった時点で「その作業の名前」にします。アプリからの進捗を待つと、
+     最初の 1 通が来るまで前の文（「プレイ」）のままでした。 */
+  playLabel.textContent = t('ps.working');
+  /* 何％か言えない作業は、帯を流しておきます（進捗が届いたら、下の flowOff が止めます） */
+  flowOn(task.flow === true);
+  renderPlay();
   const result = bridge.invoke(task.cmd);
   if (!bridge.native) {
     const n = task.steps.length;
@@ -3093,12 +3153,17 @@ async function runTask(name){
     }
   }
   const r = await result;
-  busy = false; playBtn.removeAttribute('aria-busy'); fillSp.set(0);
+  busy = false; playBtn.removeAttribute('aria-busy'); flowOn(false); fillSp.set(0);
   if (!r.ok) {
     const cur = plogRows.find(x => x.st === 'run'); if (cur) cur.st = 'err';
     if (name === 'install' || name === 'resume') pstate = 'failed';
     renderPlay(); report(r, t(PSTATE[pstate].btn)); return false;
   }
+  /* 2026-09-26: 終わった行に印を付けます。失敗の時だけ印を付けていたので、**うまくいった時は
+     「実行中…」のまま残り**、ボタンだけ「プレイ」に戻っていました。短い作業（差分だけの再ビルドなど）だと、
+     終わったのに進行ログが動き続けているように見えます（持ち主が画面を見て気づきました）。 */
+  for (const row of plogRows) if (row.st !== 'skip') row.st = 'ok';
+  fillSp.set(1); setTaskbar(0);
   pstate = 'ready'; $('#stateSel').value = 'ready'; renderPlay();
   toast(t('toast.done')); return true;
 }
@@ -3203,7 +3268,7 @@ async function launch(){
   const result = bridge.invoke('launch');
   if (!bridge.native) for (let n = 1; n <= 13; n++) { playLabel.textContent = t('play.checking', { n }); fillSp.to(n / 13); setTaskbar(n / 13); await wait(RM.matches ? 0 : 85); }
   const r = await result;
-  busy = false; playBtn.removeAttribute('aria-busy'); fillSp.set(0);
+  busy = false; playBtn.removeAttribute('aria-busy'); flowOn(false); fillSp.set(0);
   if (!r.ok) { renderPlay(); report(r, t('play')); return; }
   running = true; plogRows = []; renderPlay();
   toast(t('toast.launched'));
@@ -3252,10 +3317,12 @@ document.addEventListener('host:progress', e => {
     return;
   }
   if (d.task === 'update' && typeof d.bytes === 'number' && d.total) { paintUpd(d.bytes / d.total, d.bps ? d.bps / 1e6 : 0, d.etaSec, d.total / 1e6); return; }
-  if (typeof d.value === 'number') { fillSp.to(d.value); setTaskbar(d.value); }
+  /* 本当の数字が届いたら、流れる帯をやめて、その値の棒にします（0 も「まだ 0%」という本当の値です） */
+  if (typeof d.value === 'number' && d.value > 0) { flowOn(false); fillSp.to(d.value); setTaskbar(d.value); }
   if (d.task === 'prelaunch' && d.step) playLabel.textContent = t('play.checking', { n:d.step });
   else if (d.step && d.of) {
-    playLabel.textContent = `${d.step}/${d.of} ${t('ps.working')}`;
+    /* 1 歩しかない作業で「1/1」は数えている意味がないので、その時は歩数を出しません */
+    playLabel.textContent = d.of > 1 ? `${d.step}/${d.of} ${t('ps.working')}` : t('ps.working');
     plogRows.forEach((row, i) => { if (row.st !== 'skip') row.st = i < d.step - 1 ? 'ok' : i === d.step - 1 ? 'run' : ''; });
     renderPlog();
   }
@@ -3386,18 +3453,30 @@ $('#reqMore').addEventListener('click', e => {
 });
 
 /* ---------- news ---------- */
-/* each row: the time (its own focus stop, so hovering / focusing / tapping it shows the local time) + the button */
+/* each row: the time (its own focus stop, so hovering / focusing / tapping it shows the local time) + the version and
+   title. A version with patch notes in this page is a button that opens them; every other row is plain text - a button
+   that can only say "(prototype)" has no place in the app (2026-10-01) */
 function renderNews(){
   const ul = $('#news'); ul.textContent = '';
   for (const n of NEWS) {
-    const li = document.createElement('li'); const b = document.createElement('button');
+    const li = document.createElement('li');
     const when = n.at ? utcTime(n.at) : h('span', { class:'prep' }, t('news.prep'));
-    const v = document.createElement('span'); v.className = 'pill ver num' + (n.notes ? ' red' : ''); v.textContent = n.v;
-    const tt = document.createElement('span'); tt.className = 't'; tt.textContent = L(n.t);
-    b.append(v, tt);
-    b.addEventListener('click', () => { show('game'); if (n.notes) selectTab('tab-pn'); else toast(t('toast.proto', { x: n.v + ' — ' + L(n.t) })); });
-    li.append(h('div', { class:'news-row' }, when, b)); ul.append(li);
+    const v = h('span', { class:'pill ver' + (n.v ? ' num' : '') + (n.notes ? ' red' : '') }, n.v || t('news.next'));
+    const tt = h('span', { class:'t' }, L(n.t));
+    const item = h(n.notes ? 'button' : 'div', { class:'news-item' }, v, tt);
+    if (n.notes) item.addEventListener('click', () => { closeAll(); show('game'); selectTab('tab-pn'); });
+    li.append(h('div', { class:'news-row' + (n.notes ? ' link' : '') }, when, item)); ul.append(li);
   }
+}
+
+/* ---------- patch notes (NOTES): the heading's version, then each group in this language ---------- */
+function notesText(s){ return String(s || '').split('`').map((p, i) => i % 2 ? h('code', {}, p) : p).filter(p => p !== ''); }
+function renderNotes(){
+  $('#notesVer').textContent = NOTES.v;
+  const body = $('#notesBody'); body.textContent = '';
+  for (const g of NOTES.groups)
+    body.append(h('section', { class:'ngroup' }, h('h3', {}, svgIcon(g.icon), L(g.h)),
+      h('ul', {}, g.items.map(it => h('li', {}, h('b', {}, notesText(L(it.b))), it.s ? [' ', h('span', {}, notesText(L(it.s)))] : null)))));
 }
 
 /* ---------- times: kept and shown in UTC (SPEC 4.1); hover, keyboard focus or a tap adds the viewer's own PC time ---------- */
@@ -3418,13 +3497,21 @@ document.addEventListener('pointerdown', e => {
 });
 document.addEventListener('pointerout', e => { const lt = e.target.closest?.('.lt'); if (lt && !lt.contains(e.relatedTarget) && lt !== document.activeElement) lt.classList.remove('tip-off'); });
 document.addEventListener('focusout', e => { const lt = e.target.closest?.('.lt'); if (lt) { lt.classList.remove('tip-off'); lt.classList.remove('open'); } });
-/* maintenance chip, its card and the patch-note time: from the sample status data */
+/* maintenance chip and its card: from the sample status data.
+   The patch-note time is NOT the sample status's any more (2026-10-01, 公開前レビュー 2 回目): it showed 「更新 2026/09/22 03:00 UTC」,
+   a made-up value, beside 「公開済み」 - a day before the release it describes, which home's news row (now a button straight to
+   this tab) dates 2026/09/23 10:00 UTC. It is the time the GitHub release of that version was published: the NEWS row with
+   notes:true, the same value the news shows, right after 「公開済み」.
+   2026-10-01 (v0.5.6): 「公開済み」 and the time only once that row has its time (V056_AT); until then the pill says 準備中,
+   the same word as the news row, and there is no time. */
 function renderStatus(){
   const g = STATUS.games.pocketroles, m = g.maintenance[0];
   $('#maintChip').textContent = t('maint.chip', { t:fmtUTC(m.start) });
   const tm = $('#maintTime'); tm.dateTime = m.start; tm.textContent = fmtUTC(m.start);
   $('#maintLocal').textContent = fmtLocal(m.start);
-  const nt = $('#notesTime'); nt.textContent = ''; nt.append(t('notes.updated'), utcTime(g.notes.updated));
+  const nr = NEWS.find(n => n.notes), out = !!(nr && nr.at);
+  const nt = $('#notesTime'); nt.textContent = ''; if (out) nt.append(utcTime(nr.at));
+  const pill = $('#notesPill'); pill.textContent = t(out ? 'notes.out' : 'news.prep'); pill.classList.toggle('red', out);
 }
 
 
@@ -3809,7 +3896,7 @@ function renderSampleCtl(){
 }
 
 /* ---------- titles (from the title manifest): rail, home, library ---------- */
-const notesSeen = () => (store.get('sp.seenNotes') || store.get('seenNotes')) === 'v0.5.5';
+const notesSeen = () => (store.get('sp.seenNotes') || store.get('seenNotes')) === NOTES.v;   /* a new version's notes are new again */
 const allTitles = () => sample.titles ? MANIFEST.titles.concat(SAMPLE_TITLES) : MANIFEST.titles;
 const titleLabel = ti => ti.sample ? t('nav.sample', { x:L(ti.name) }) : L(ti.name);
 function titleIcon(ti){
@@ -3825,9 +3912,28 @@ function titleIcon(ti){
 const prSub = () => {
   const vars = Object.assign(installVars(), verVars());
   /* "update" names the newer version only when it is known (the app's status has none: then only the installed one) */
-  const k = sample.state === 'none' ? 'mod.subNone' : sample.state !== 'update' ? 'mod.sub' : vars.n === '—' ? 'mod.subUpdate0' : 'mod.subUpdate';
+  /* "not installed" carries the title list's sample size ("約 1.0 GB") only in the prototype: the app has no size of its
+     own to give (the play button drops it too, ui/host-v01.js), so it says just 未インストール (2026-10-01) */
+  const k = sample.state === 'none' ? (bridge.native ? 'mod.subNone0' : 'mod.subNone') : sample.state !== 'update' ? 'mod.sub' : vars.n === '—' ? 'mod.subUpdate0' : 'mod.subUpdate';
   return t(k, vars);
 };
+/* home's big card: the line after the product's name is what is on this PC - the installed version, 未インストール, or
+   an update. In the app that is the "status" event's (ui/host-v01.js puts bridge.versions and the state there before it
+   redraws); before the first status nothing is written at all, never the prototype's sample or a guess.
+   2026-10-01（公開前レビュー 2 回目）: 起動がホームになったので、プレイボタンの赤・橙の札（修復が必要・Aegis が止めた・
+   Steam 版が更新された…）は、MOD の画面を開くまで見えなくなった。そういう状態の時は、この行もプレイボタンの見出し（ps.<状態>）
+   にして、注意の色（.attn）にする。前は「インストール済み」（Aegis で止まった時）や「未インストール」（修復が要る時）と出ていた。
+   インストール済み・未インストール・更新ありは今までどおり prSub（install と update はそちらが言う）。repair と blocked は
+   アプリの状態で、PSTATE と ps.repair / ps.blocked は ui/host-v01.js が足す */
+const HOME_ATTN = ['repair', 'blocked', 'sync', 'failed', 'needGame', 'devUpdate', 'devRebuild'];
+function renderHomeState(){
+  const el = $('#homeState'); if (!el) return;
+  const known = !bridge.native || !!bridge.versions;
+  const attn = known && HOME_ATTN.includes(pstate) && PSTATE[pstate] ? t('ps.' + pstate) : '';
+  el.textContent = known ? (attn || prSub()) : '';
+  el.classList.toggle('attn', !!attn);
+  el.hidden = !known;
+}
 function renderRail(){
   const box = $('#railTitles'), more = $('#railMore');
   for (const b of $$('.tile[data-title]', box)) b.remove();
@@ -3884,7 +3990,7 @@ function renderLibrary(){
 }
 /* the games slot: no game is listed yet, so the card only says one may come (asked for 2026-09-23) */
 function renderHomeGames(){ const box = $('#homeGames'); box.textContent = ''; box.append(soonCard('game.soonBody')); }
-function renderTitles(){ renderRail(); renderHomeMods(); renderHomeGames(); renderLibrary(); }
+function renderTitles(){ renderRail(); renderHomeMods(); renderHomeGames(); renderHomeState(); renderLibrary(); }
 
 /* ---------- settings: full-window overlay, tree on the left, one page on the right ---------- */
 let setPage = 'general';
@@ -4120,11 +4226,18 @@ const PAGES = {
         h('div', { class:'pathbox', role:'group', 'aria-labelledby':'set-place-l' },
           h('span', { class:'num' }, h('bdi', { id:'set-place-path' }, sample.state === 'none' && sample.noGame ? t('lib.notFound') : INST.path + t('set.pathSample'))),
           h('button', { class:'ibtn', id:'set-pick', 'data-cmd':'pickSteam', 'aria-label':t('set.placeBtn'), title:t('set.placeBtn') }, svgIcon('i-folder'))),
-        /* the MOD copy exists only after an install (sample state) */
+        /* the MOD copy exists only after an install (sample state).
+           2026-10-01: 「場所を変える」(moveCopy) - before an install it only decides where the copy will go; after one, the app
+           moves the copy (ClientApp.DoMoveCopy). The promise made on bilibili on 2026-09-24 (「デスクトップに入れたくない」). */
+        /* 2026-10-01 (pre-release review): before an install the row also says WHERE the copy will be made
+           (set.copyHere + the same #set-copy-path the app fills from "status" modDir), so 「場所を変える」 is never pressed blind */
         sample.state === 'none'
-          ? h('div', { class:'sub-path' }, h('span', {}, t('set.copy')), h('span', {}, t('set.notYet')))
+          ? h('div', { class:'sub-path' }, h('span', {}, t('set.copy')), h('span', {}, t('set.notYet')),
+            h('span', {}, t('set.copyHere')), h('code', { id:'set-copy-path' }, '%USERPROFILE%\\Desktop\\Among Us PocketRoles' + t('set.pathSample')),
+            h('button', { class:'linkbtn', id:'set-movecopy', 'data-cmd':'moveCopy' }, t('set.moveCopy')))
           : h('div', { class:'sub-path' }, h('span', {}, t('set.copy')), h('code', { id:'set-copy-path' }, '%USERPROFILE%\\Desktop\\Among Us PocketRoles' + t('set.pathSample')),
-            h('button', { class:'linkbtn', id:'set-openmod', 'data-cmd':'openModFolder' }, t('set.open')))),
+            h('button', { class:'linkbtn', id:'set-openmod', 'data-cmd':'openModFolder' }, t('set.open')),
+            h('button', { class:'linkbtn', id:'set-movecopy', 'data-cmd':'moveCopy' }, t('set.moveCopy')))),
       h('div', { class:'set-block' }, cap(t('set.autoUp')),
         h('p', { class:'row-d', id:'set-autoup-d' }, t('set.autoUpD')),
         (() => { const i = h('input', { type:'checkbox', id:'set-autoup', 'aria-describedby':'set-autoup-d' }); i.checked = prefs.autoUpdate; i.addEventListener('change', () => setPref('autoUpdate', i.checked)); return h('label', { class:'chk', for:'set-autoup' }, i, t('set.autoUpChk')); })()),
@@ -4158,6 +4271,10 @@ function devBlock(){
   return h('div', { class:'set-block', id:'set-dev' }, cap(t('set.devCap'), 'set-dev-cap'),
     toggleRow('set-devBuild', t('set.dev'), t('set.devD'), !!prefs.devBuild, v => setPref('devBuild', v, v ? 'toast.devOn' : 'toast.devOff')),
     h('p', { class:'note', id:'set-dev-path' }, t('set.devPath'), ' ', h('code', {}, dev.folder || ''), dev.sample ? t('set.pathSample') : ''),
+    /* v1.4: 作業コピーはデスクトップに無くてもよい（持ち主 2026-09-26「特定のフォルダからやらないといけないのめんどくさい」）。
+       行き先を決めるのは、その場で開く Windows のフォルダ選択です。ページは場所を渡しません（cmd だけ送ります）。 */
+    h('p', { class:'note' },
+      h('button', { class:'linkish', 'data-cmd':'pickModSource', 'data-i18n':'set.devPick' }, t('set.devPick'))),
     dev.origin ? h('p', { class:'note', id:'set-dev-origin' }, t('set.devNow'), ' ', dev.origin) : null);
 }
 /* a title gets a settings row only when this client has code for its page: the title list alone can add a title to the rail,
@@ -4762,10 +4879,9 @@ function setLang(l){
   for (const el of $$('[data-i18n-attr]')) for (const pair of el.dataset.i18nAttr.split(';')) { const [a, k] = pair.split(':'); el.setAttribute(a, t(k)); }
   for (const el of $$('[data-tipkey]')) { el.dataset.tip = t(el.dataset.tipkey); el.setAttribute('aria-label', t(el.dataset.tipkey)); }
   for (const b of $$('#protoBar [data-lang]')) b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
-  const note = $('#notesLangNote'); note.hidden = lang === 'ja'; note.textContent = t('notes.jaOnly');
   const rm = $('#reqMore'); rm.querySelector('span').textContent = t($('#req').classList.contains('open') ? 'req.less' : 'req.more');
   renderPlay(); renderStateSel(); renderRoleSel(); if (!updCard.hidden && updLast) paintUpd(...updLast);
-  renderReq(); renderNews(); renderStatus(); renderChecks(); renderAegisLog();
+  renderReq(); renderNews(); renderNotes(); renderStatus(); renderChecks(); renderAegisLog();
   renderTitles(); renderSampleCtl(); relabelSetTree(); if (!$('#m-setup').hidden) renderSetup();
   profile.render(); community.render();
   if (!docked()) community.undock();
@@ -4784,6 +4900,9 @@ for (const b of $$('#protoBar [data-lang]')) b.addEventListener('click', () => s
 
 /* ---------- review hooks for the preview wrapper (make-preview.sh); not part of the real UI ---------- */
 window.spReview = {
+  /* the patch notes' data (read only): tools\uitest counts the groups and items from it, so the notes can change on the
+     release day without the test changing */
+  notes: NOTES,
   splashAt: ms => freezeSplash(+ms || 0),
   skipSplash: () => finishSplash(),
   logo: i => logo.freeze(+i || 0),
@@ -4807,8 +4926,8 @@ window.spReview = {
   sound: n => sound.play(n),
   asked: askValues,
   setPage: p => { finishSplash(); if (!$('#m-settings').hidden) selectSetPage(p); else { setPage = p; openLayer('m-settings'); } },
-  /* sample state and switches; the start page follows the state like a real start (not installed → home) */
-  sample: s => { if (!SAMPLE_STATES.includes(s)) return; setSampleState(s); setPstate(pstateFor(s)); show(s === 'none' ? 'home' : 'game'); },
+  /* sample state and switches; then home, like a real start (every start opens on home, whatever the state - 2026-10-01) */
+  sample: s => { if (!SAMPLE_STATES.includes(s)) return; setSampleState(s); setPstate(pstateFor(s)); show('home'); },
   noGame: () => { if (!sample.noGame) toggleSampleFlag('noGame'); },
   titles: () => { if (!sample.titles) toggleSampleFlag('titles'); },
   setup: () => { finishSplash(); setSampleState('none'); setPstate('install'); show('game'); runInstall(); },
@@ -4855,8 +4974,7 @@ community.init();
         '規約を大事なところで変える時は、もう一度この画面を出します。'
       ],
       tabTerms:'利用規約', tabPrivacy:'プライバシーポリシー', tabRules:'遊び方のルール',
-      version:'版 {0}', openBrowser:'ブラウザで開く（準備中）', loading:'読み込んでいます…',
-      openSoon:'この 3 つの文書は、まだウェブに出していません。上の箱でお読みください。',
+      version:'版 {0}', loading:'読み込んでいます…',
       docBlocked:'文書を読み込めませんでした。読めていない物に同意はできません。Client を入れ直してください。',
       loadFail:'文書を開けませんでした。Client の入っているフォルダの ui\\legal\\{0} を見てください。',
       trLabel:'チャット翻訳を使う',
@@ -4889,8 +5007,7 @@ community.init();
         '条款的重要部分有变化时，会再次显示这个画面。'
       ],
       tabTerms:'使用条款', tabPrivacy:'隐私政策', tabRules:'游戏规则',
-      version:'版本 {0}', openBrowser:'在浏览器中打开（准备中）', loading:'正在载入…',
-      openSoon:'这三份文件尚未发布到网上。请在上面的框中阅读。',
+      version:'版本 {0}', loading:'正在载入…',
       docBlocked:'无法载入文件。无法同意没有显示出来的内容。请重新安装 Client。',
       loadFail:'无法打开文档。请查看 Client 所在文件夹的 ui\\legal\\{0}。',
       trLabel:'使用聊天翻译',
@@ -4923,8 +5040,7 @@ community.init();
         'If the terms change in an important way, this screen appears again.'
       ],
       tabTerms:'Terms of Use', tabPrivacy:'Privacy Policy', tabRules:'Play Rules',
-      version:'Version {0}', openBrowser:'Open in browser (coming soon)', loading:'Loading…',
-      openSoon:'These three documents are not on the web yet. Please read them in the box above.',
+      version:'Version {0}', loading:'Loading…',
       docBlocked:'The documents could not be loaded. You cannot agree to text that was not shown. Please reinstall the Client.',
       loadFail:'The document could not be opened. Look in ui\\legal\\{0} next to the Client.',
       trLabel:'Use chat translation',
@@ -4960,10 +5076,13 @@ community.init();
      つまり住所を書き換えても開きません。開けるようにするには C# 側で 3 か所
      （Supported へ移す・BeforeConsent に足す・AllowedWebPages に足す）が要ります。
      それまでは下のボタンを押せなくしてあります。この表は、その時の下書きとして残します。 */
+  /* 公開ページの本当の場所（2026-09-26 に実際に開いて確かめました）。
+     前は '/{lang}/terms/' と書いてありましたが、そんな道はありません。押せないボタンだったので
+     だれも気づきませんでした。{lang} は ja / zh / en です（同梱の .md だけが zh-CN）。 */
   const SITE = {
-    terms:'https://starpocketgames.com/{lang}/terms/',
-    privacy:'https://starpocketgames.com/{lang}/privacy/',
-    rules:'https://starpocketgames.com/{lang}/rules/'
+    terms:'https://starpocketgames.com/terms.{lang}.html',
+    privacy:'https://starpocketgames.com/privacy.{lang}.html',
+    rules:'https://starpocketgames.com/rules.{lang}.html'
   };
 
   let info = null;          /* アプリが送ってきた firstRun（版の番号など） */
@@ -4995,13 +5114,6 @@ community.init();
     el('frTab-privacy').textContent = d.tabPrivacy;
     el('frTab-rules').textContent = d.tabRules;
     el('frVer').textContent = fmt(d.version, verOf(doc));
-    /* 行き先がまだ無いので押せなくします。設定の footer の「利用規約（準備中）」と同じ扱いです。
-       押せる見た目で何も起きないのが、同意の画面では一番よくない形でした。 */
-    const openBtn = el('frOpen');
-    openBtn.textContent = d.openBrowser;
-    openBtn.disabled = true;
-    openBtn.title = d.openSoon;
-
     el('frTrLabel').textContent = d.trLabel;
     el('frTrLine').textContent = d.trLine;
     el('frTrWhen').textContent = d.trWhen;
@@ -5179,9 +5291,10 @@ community.init();
   el('frAskQuit').addEventListener('click', () => bridge.invoke('consent.decline'));
   el('frUninstall').addEventListener('click', () => bridge.invoke('uninstall', {}));
   el('frAskUninstall').addEventListener('click', () => bridge.invoke('uninstall', {}));
-  /* frOpen は押せません（上の paint を参照）。開けるようにする日が来たら、ここで
-     bridge.invoke('openExternal', { url: SITE[doc].replace('{lang}', lg === 'zh' ? 'zh-CN' : lg) })
-     を返してください。lang が 'zh' の時にファイル名が 'zh-CN' になる点に注意（公開ページ側は zh です）。 */
+  /* 「ブラウザで開く」を作る日が来たら: 行き先は下の SITE です。**ページから URL を受け取る形に
+     しないでください**（差し替えられたページが、同意の前に好きな所を開けてしまいます）。doc と lang
+     だけを渡し、行き先は C# 側の表で決める命令を足して、それを Bridge.BeforeConsent に入れます。
+     lang が 'zh' の時、サイトのファイル名も 'zh' です（同梱の .md だけが 'zh-CN'）。 */
   /* Esc は「同意しない」と同じ確認へ。何もせず消える道は作りません */
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || el('firstrun').hidden) return;
@@ -5195,8 +5308,9 @@ community.init();
   /* 見本を見る時だけ（本物はアプリが出します） */
   window.spFirstRun = i => show(i || { terms:'0.9', privacy:'0.9', rules:'0.8', chatTranslate:false, again:false });
 })();
-/* first run (not installed): splash → home; afterwards the title page */
-show(sample.state === 'none' ? 'home' : 'game');
+/* every start: splash → home, installed or not (the owner, 2026-10-01). Before, a PC with the mod installed opened on
+   the MOD page: the page keeps its last state in its own storage (sp.sample), so from the second start on it always did. */
+show('home');
 runSplash();
 })();
 </script>

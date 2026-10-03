@@ -2,7 +2,8 @@
 // 5 step 6). One process: the tray's work runs on the app's UI thread (the 1-second watcher, toasts), the scans on worker
 // threads, one scan at a time.
 //   Start      the Aegis mutex (Local\wakayamachannel.Aegis.AntiCheat; while the old PowerShell tray holds it, Aegis stays
-//              "off" and tries again every second), events.log pruned to 30 days, the definitions loaded and fetched once
+//              "off" and tries again every second), events.log pruned to 30 days (not on the first start on this PC,
+//              v1.1.2 直し 1), the definitions loaded and fetched once
 //              in the background, the start scan, then the watcher and the "ready" toast - the ps1's order.
 //   Refresh    the app stays open for days (the close button goes to the tray), while Aegis.ps1's tray started with every
 //              launcher: so opening the window or playing downloads the definitions again when the last download began
@@ -121,8 +122,7 @@ namespace Starpocket.Client.Aegis
             try
             {
                 try { Directory.CreateDirectory(ctx.StateDir); } catch (Exception) { }
-                int pruned = EventsLog.Prune(ctx.StateDir, 30, Now());   // v0.5.5 privacy: event lines (player names) older than 30 days
-                if (pruned > 0) log("Aegis: " + pruned + " events.log line(s) older than 30 days removed");
+                PruneEvents();
                 var defs = NewDefinitions().Load();
                 trayDefs = defs;
                 lock (gate) { defsVersion = defs.Version; sigState = defs.SigState; }
@@ -137,6 +137,22 @@ namespace Starpocket.Client.Aegis
             }
             catch (Exception ex) { Failed(ex); }
             RaiseChanged();
+        }
+
+        /// <summary>v0.5.5 privacy: event lines (player names) older than 30 days go from events.log - except on the first start
+        /// on this PC (v1.1.2 直し 1: <see cref="AegisContext.MayPrune"/>, src\Core\FirstCleanup.cs), when nothing is touched.
+        /// Returns the lines dropped.</summary>
+        internal int PruneEvents()
+        {
+            var may = ctx.MayPrune;
+            if (may != null && !may())
+            {
+                log("Aegis: events.log is not pruned (the first start on this PC)");
+                return 0;
+            }
+            int pruned = EventsLog.Prune(ctx.StateDir, 30, Now());
+            if (pruned > 0) log("Aegis: " + pruned + " events.log line(s) older than 30 days removed");
+            return pruned;
         }
 
         /// <summary>Defs.FetchAsync: one download on a background thread (never two at once); the result is used from the next
@@ -358,6 +374,14 @@ namespace Starpocket.Client.Aegis
             // Aegis.ps1 -ScanOnly does nothing while a tray holds the mutex; in the app the tray is the app itself
             if (!ownsMutex) return new ScanSummary { Error = OffText() };
             var o = RunScan(NewDefinitions().Load(), "scanOnly", progress, CancellationToken.None);
+            return new ScanSummary { Warnings = o.Warnings, Serious = o.Serious };
+        }
+
+        public ScanSummary AutoScan()
+        {
+            var defs = trayDefs;
+            if (defs == null || !ownsMutex || stopped) return new ScanSummary { NotAvailable = true };
+            var o = RunScan(defs, AegisAutoScan.Kind, null, CancellationToken.None);
             return new ScanSummary { Warnings = o.Warnings, Serious = o.Serious };
         }
 

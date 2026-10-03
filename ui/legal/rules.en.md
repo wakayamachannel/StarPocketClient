@@ -1,7 +1,7 @@
 # PocketRoles Play Rules (Aegis Rules)
 
 - Version: 1.0
-- Last edited: 2026-09-26
+- Last edited: 2026-10-02
 - Starts on (takes effect): 2026-09-26
 - Made by: StarPocket Games (the activity name of one hobby developer; not a company)
 
@@ -151,7 +151,7 @@ Every article has a number. Aegis and the error-code screens show a number like 
    4. Do not post records of people who joined (names, evidence, chat) on social media or other public places.
       - Send report zips and "One player's evidence" zips (Privacy Policy 3.3) by email. Do not post them in public places.
    5. Do not ask for a shared ban just because you dislike someone.
-   6. If you use chat translation, understand that the chat of people in the room is sent to a translation company (Google or DeepL). It is off by default; turn it on only if you understand this. That is for a fresh install: **the config file of someone upgrading from v0.5.4 or earlier stays on.** v0.5.5 tells that host once and hands them `/opt upgrade off`. Type `/opt translate off` in chat if you do not want it.
+   6. If you use chat translation, understand that the chat of people in the room is sent to a translation company (Google or DeepL). It is off by default; turn it on only if you understand this. That is for a fresh install: **for someone who upgraded from v0.5.4 or earlier and never changed this setting, the config file may still say on.** v0.5.5 tells that host once and hands them `/opt upgrade off`. Type `/opt translate off` in chat if you do not want it.
       - When translation is on, the welcome line says "Auto-translation is on" (not if the host changed or turned off the welcome line).
  - DeepL's free key is meant to be used without sending personal information. If you use a free key, think about whether you can keep that promise.
    7. Do not say "Aegis protects this room" in a room where Aegis detection or shared bans are turned off.
@@ -338,3 +338,4 @@ Every article has a number. Aegis and the error-code screens show a number like 
 | 0.7 (draft) | 2026-09-23 | Applied the owner's decisions (D-39, D-40, D-41, D-42). The examples of hurtful words now describe the kinds of words instead of naming any, and the line about the word lists now says only that the list is no longer printed as it is - not that it is secret (Article 5(1)). Changed the shared-ban numbers and published them: one host for "Certain" (at most 2 per 30 days from the same host), 3 or more different hosts within 30 days for anything else (was 2 or more), and reports are not accepted from a host whose reports were found to be wrong on appeal 3 times within 30 days (was 5; the owner: "five is too many, pick a number you think is right and I approve it") (Article 7(3), Article 9(2)). Said that chat translation is off by default (Article 7(1)(6)). Kept the rule that hosts must not make money from rooms, and added that the author covers the running costs only through the optional support link on the official site (Article 7(1)). The brand is spelled "StarPocket" |
 | 0.8 (draft) | 2026-09-23 | Put the number of different hosts a shared ban needs back to **2 or more** (Article 9(2)(2), and the published-numbers part at the end of Article 9(2)). The "3" had been written into the drafts without ever asking the owner (the official site was not published yet at that time, so it never went out on a published page). On 2026-09-23 the owner answered: "keep 2 for now - with so few hosts, 3 would mean shared bans almost never happen; raise it later when there are more hosts" (D-39). Added one sentence saying the number may go up as more hosts join. Rewrote the published-numbers part as three separate items - **hosts** (2 or more different hosts), **bans** (2 per 30 days from the same host) and **mistakes** (wrong on appeal 3 times in 30 days) - so they cannot be confused. The bans and mistakes numbers are unchanged |
 | 1.0 | 2026-09-26 | The first published version. **The rules themselves are unchanged from 0.8.** The "(draft)" marks, the lines explaining those marks and the "not published yet" wording are gone, and the date it takes effect is filled in. |
+| 1.0 | 2026-10-02 | Corrected the chat-translation note in Article 7(1)(6) to the fact: the setting of a host who upgraded from v0.5.4 or earlier and never changed it may stay on. **The rules themselves are unchanged.** The version stays 1.0 |

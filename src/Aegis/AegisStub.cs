@@ -25,6 +25,7 @@ namespace Starpocket.Client.Aegis
         public PreLaunchResult PreLaunchScan(Action<ScanProgress> progress, CancellationToken cancel) => new PreLaunchResult { Ran = false };
         public ScanSummary Rescan(Action<ScanProgress> progress) => new ScanSummary { NotAvailable = true };
         public ScanSummary ScanOnly(Action<ScanProgress> progress) => new ScanSummary { NotAvailable = true };
+        public ScanSummary AutoScan() => new ScanSummary { NotAvailable = true };
 
         public string EventsLogPath => Path.Combine(context?.StateDir ?? "", "events.log");
 

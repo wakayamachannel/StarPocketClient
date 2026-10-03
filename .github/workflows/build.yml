@@ -98,6 +98,23 @@ jobs:
           Get-Content $report | Select-String "^RESULT" | ForEach-Object { Write-Host $_ }
           if ($code -ne 0) { Get-Content $report | Select-String "^FAIL" | ForEach-Object { Write-Host $_ }; throw "the self-test failed (exit $code)" }
 
+      # v1.1.2 (2026-10-01, the review before the 64-bit release): the top row of the news carries the time the PocketRoles
+      # release was published, and that time is known only after it is out - so it is ONE line written on the day
+      # (V056_AT in design\launcher-proto\index.html, then tools\import-ui.ps1 makes ui\index.html). Left at null, the
+      # self-test only prints an INFO line and passes, and the app would say "準備中" for as long as it is used: v1.1.1
+      # went out two days after PocketRoles v0.5.5 and still said "v0.5.5 準備中". A release tag must not build so.
+      - name: A release tag carries the mod's release time
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $bad = @()
+          foreach ($f in @("ui\index.html", "design\launcher-proto\index.html")) {
+            if (-not (Test-Path $f)) { continue }
+            foreach ($hit in (Select-String -Path $f -Pattern '^\s*const\s+V\d+_AT\s*=\s*null\s*;')) { $bad += "$f line $($hit.LineNumber): $($hit.Line.Trim())" }
+          }
+          if ($bad.Count -gt 0) { $bad | ForEach-Object { Write-Host $_ }; throw "the news still says it is not out yet: write the mod release's published_at there (then tools\import-ui.ps1) before the tag" }
+          Write-Host "the news has the mod's release time"
+
       - name: Check the exe's identity
         shell: pwsh
         run: |

@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Text;
@@ -31,7 +32,348 @@ namespace Starpocket.Client.SelfTest
             StateFileTests(r);
             PastLogTests(r);
             PickedSteamTests(r);
+            CopyPlaceTests(r);
             r.Section("");
+        }
+
+        // ------------------------------------------------------------------ 2026-10-01: where the mod copy lives
+        /// <summary>設定 → Among Us の場所 →「場所を変える」（CopyPlace.cs / CopyMover.cs）。置いてよい所の判断と、本当に移す処理。
+        /// 移す処理は自己テストのフォルダの中だけで回す（同じドライブ＝名前を変える道と、別のドライブ＝写す道の両方）。</summary>
+        static void CopyPlaceTests(SelfTestRunner r)
+        {
+            r.Section("copy place");
+            r.Equal("target: <picked>\\Among Us PocketRoles", @"D:\Games\Among Us PocketRoles", CopyPlace.TargetFor(@"D:\Games"));
+            r.Equal("target: a trailing \\ is ignored", @"D:\Games\Among Us PocketRoles", CopyPlace.TargetFor(@"D:\Games\"));
+            r.Equal("target: a folder already named so is used as it is", @"D:\Games\among us pocketroles", CopyPlace.TargetFor(@"D:\Games\among us pocketroles"));
+            r.Equal("target: a drive", @"D:\Among Us PocketRoles", CopyPlace.TargetFor(@"D:\"));
+            r.Check("target: nothing picked", CopyPlace.TargetFor(null) == null && CopyPlace.TargetFor("") == null);
+
+            Func<CopyTargetFacts> ok = () => new CopyTargetFacts
+            {
+                Target = @"D:\Games\Among Us PocketRoles", Current = @"C:\Users\u\Desktop\Among Us PocketRoles", CurrentExists = true,
+                Writable = true, SameVolume = false, FreeBytes = 50L << 30, NeededBytes = 1L << 30,
+                Protected = new[] { @"C:\Program Files", @"C:\Program Files (x86)", @"C:\Windows" },
+                OneDrive = new[] { @"C:\Users\u\OneDrive" },
+            };
+            r.Check("check: a free folder on another drive is fine", CopyPlace.Check(ok()) == null);
+            CopyTargetFacts f;
+            f = ok(); f.Target = null; r.Equal("check: nothing", "cp_bad", CopyPlace.Check(f));
+            f = ok(); f.Target = @"Games\Among Us PocketRoles"; r.Equal("check: not a drive path", "cp_bad", CopyPlace.Check(f));
+            f = ok(); f.Target = @"\\nas\share\Among Us PocketRoles"; r.Equal("check: a network share", "cp_network", CopyPlace.Check(f));
+            f = ok(); f.Target = @"c:\users\U\desktop\among us pocketroles\"; r.Equal("check: where it already is (case, trailing \\)", "cp_same", CopyPlace.Check(f));
+            f = ok(); f.Target = @"C:\Users\u\Desktop\Among Us PocketRoles\BepInEx\Among Us PocketRoles"; r.Equal("check: inside itself", "cp_inside", CopyPlace.Check(f));
+            f = ok(); f.Target = @"C:\Program Files\Among Us PocketRoles"; r.Equal("check: Program Files", "cp_protected", CopyPlace.Check(f));
+            f = ok(); f.Target = @"C:\Windows\Temp\Among Us PocketRoles"; r.Equal("check: Windows", "cp_protected", CopyPlace.Check(f));
+            f = ok(); f.Target = @"C:\Program Files Mine\Among Us PocketRoles"; r.Check("check: a folder that only starts like Program Files is fine", CopyPlace.Check(f) == null);
+            f = ok(); f.Target = @"E:\SteamLibrary\steamapps\common\Among Us PocketRoles"; r.Equal("check: inside steamapps", "cp_steam", CopyPlace.Check(f));
+            f = ok(); f.Target = @"C:\Users\u\OneDrive\Games\Among Us PocketRoles"; r.Equal("check: inside OneDrive", "cp_onedrive", CopyPlace.Check(f));
+            f = ok(); f.TargetExists = true; r.Equal("check: a folder with files in it", "cp_exists", CopyPlace.Check(f));
+            f = ok(); f.TargetExists = true; f.TargetEmpty = true; r.Check("check: an empty folder is fine", CopyPlace.Check(f) == null);
+            f = ok(); f.TargetExists = true; f.TargetHasMarker = true; r.Check("check: what a stopped move left is fine (it is ours)", CopyPlace.Check(f) == null);
+            f = ok(); f.TargetExists = true; f.TargetIsCopy = true; r.Equal("check: a copy there while this one exists too -> refused", "cp_exists", CopyPlace.Check(f));
+            f = ok(); f.TargetExists = true; f.TargetIsCopy = true; f.CurrentExists = false; r.Check("check: a copy there and none here -> it is used", CopyPlace.Check(f) == null);
+            f = ok(); f.Writable = false; r.Equal("check: cannot write", "cp_write", CopyPlace.Check(f));
+            f = ok(); f.FreeBytes = (1L << 30) + 10; r.Equal("check: not enough room on another drive", "cp_space", CopyPlace.Check(f));
+            f = ok(); f.FreeBytes = 10; f.SameVolume = true; r.Check("check: the same drive needs no room (a rename)", CopyPlace.Check(f) == null);
+            f = ok(); f.FreeBytes = 10; f.CurrentExists = false; r.Check("check: nothing to move needs no room", CopyPlace.Check(f) == null);
+            f = ok(); f.FreeBytes = null; r.Check("check: free space unknown -> not refused for it", CopyPlace.Check(f) == null);
+            // 公開前レビュー 2026-10-01
+            f = ok(); f.Target = @"Z:\Among Us PocketRoles"; f.Network = true; r.Equal("check: a mapped network drive (Z: -> \\\\nas) is a network place too", "cp_network", CopyPlace.Check(f));
+            r.Equal("drive types refused as network: Network / NoRootDirectory / Unknown, not Fixed / Removable", "True|True|True|False|False",
+                CopyPlace.IsNetworkLike(DriveType.Network) + "|" + CopyPlace.IsNetworkLike(DriveType.NoRootDirectory) + "|" + CopyPlace.IsNetworkLike(DriveType.Unknown) + "|" + CopyPlace.IsNetworkLike(DriveType.Fixed) + "|" + CopyPlace.IsNetworkLike(DriveType.Removable));
+            f = ok(); f.Target = @"C:\Users\u\AppData\Local\StarPocket\Client\Among Us PocketRoles";
+            f.Protected = f.Protected.Concat(new[] { @"C:\Users\u\AppData\Local\StarPocket\Client" }).ToArray();
+            r.Equal("check: inside the app's own data folder (the uninstall removes it)", "cp_protected", CopyPlace.Check(f));
+            r.Check("cp_protected names the app's own folders in 3 languages",
+                S.T("ja", "cp_protected").Contains("このアプリ自身のフォルダ") && S.T("zh-CN", "cp_protected").Contains("本应用自己的文件夹") && S.T("en", "cp_protected").Contains("this app's own folders"));
+            // v1.1.2（持ち主の決定 2026-10-01 Q6、設計 B12）: 今までのランチャーは copyDir を読まないので、移した後に開くとデスクトップに
+            // 2 つ目のコピーを作る。文は「もう開かないでください」と頼む。前の「環境変数 POCKETROLES_GAMEDIR も同じ場所に」は利用者に難しいのでやめた
+            string[][] notAgain =
+            {
+                new[] { "ja", "今までのランチャー（PocketRoles Launcher）は、もう開かないでください（開くと、デスクトップにもう 1 つコピーを作ります）。" },
+                new[] { "zh-CN", "请不要再打开原来的启动器（PocketRoles Launcher）。打开的话，会在桌面上再创建一个副本。" },
+                new[] { "en", "Please do not open the old launcher (PocketRoles Launcher) any more. If you open it, it makes another copy on the desktop." },
+            };
+            foreach (var key in new[] { "cp_done", "cp_done_left", "cp_set_done" })
+            {
+                r.Check(key + ": asks not to open the old launcher again (it would make another copy on the desktop), in 3 languages",
+                    notAgain.All(x => S.T(x[0], key).EndsWith("\n\n" + x[1], StringComparison.Ordinal)),
+                    string.Join(" | ", notAgain.Where(x => !S.T(x[0], key).EndsWith("\n\n" + x[1], StringComparison.Ordinal)).Select(x => x[0])));
+                r.Check(key + ": no environment variable and no file names to deal with any more",
+                    notAgain.All(x => !S.T(x[0], key).Contains("POCKETROLES_GAMEDIR") && !S.T(x[0], key).Contains(".ps1")));
+                r.Check(key + ": the place is still named first", notAgain.All(x => S.T(x[0], key, @"D:\X", "3").Contains(@"D:\X")));
+            }
+
+            r.Equal("display: the user's folder becomes %USERPROFILE%", @"%USERPROFILE%\Desktop\Among Us PocketRoles", CopyPlace.Display(@"C:\Users\riot\Desktop\Among Us PocketRoles", @"C:\Users\riot"));
+            r.Equal("display: a folder elsewhere stays", @"D:\Games\Among Us PocketRoles", CopyPlace.Display(@"D:\Games\Among Us PocketRoles", @"C:\Users\riot"));
+            r.Equal("display: a user whose name only starts the same stays", @"C:\Users\riot2\x", CopyPlace.Display(@"C:\Users\riot2\x", @"C:\Users\riot"));
+            r.Equal("size", "1.2 GB|300 MB|1 MB", CopyPlace.Size(1288490189L) + "|" + CopyPlace.Size(300L * 1024 * 1024) + "|" + CopyPlace.Size(5));
+
+            // ---- the move itself, inside the self-test folder only
+            Func<string, string> makeCopy = dir =>
+            {
+                SelfTestRunner.Touch(Path.Combine(dir, "Among Us.exe"), "exe");
+                SelfTestRunner.Touch(Path.Combine(dir, @"BepInEx\plugins\PocketRoles.dll"), "dll");
+                SelfTestRunner.Touch(Path.Combine(dir, @"BepInEx\config\jp.pocketroles.mod.cfg"), "cfg");
+                Directory.CreateDirectory(Path.Combine(dir, @"BepInEx\cache"));   // an empty folder survives the move too
+                var ro = Path.Combine(dir, "readonly.txt");
+                SelfTestRunner.Touch(ro, "ro");
+                File.SetAttributes(ro, FileAttributes.ReadOnly);
+                return dir;
+            };
+            Func<string, bool> whole = dir => File.ReadAllText(Path.Combine(dir, @"BepInEx\plugins\PocketRoles.dll")) == "dll"
+                && File.Exists(Path.Combine(dir, "Among Us.exe")) && File.Exists(Path.Combine(dir, "readonly.txt")) && Directory.Exists(Path.Combine(dir, @"BepInEx\cache"));
+            r.Test("move: the same drive (a rename)", () =>
+            {
+                string root = r.NewDir("copyplace-rename");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles")), to = Path.Combine(root, @"Games\Among Us PocketRoles");
+                var log = new List<string>();
+                var m = new CopyMover { Log = log.Add, SameVolume = (a, b) => true };
+                var res = m.Move(from, to);
+                r.Check("ok, renamed", res.Ok && res.Renamed && !res.NothingToMove, res.ErrorKey + " " + res.Error);
+                r.Check("everything is at the new place, nothing at the old", whole(to) && !Directory.Exists(from));
+                r.Check("undo puts it back", m.Undo(res, from, to) && whole(from) && !Directory.Exists(to));
+            });
+            r.Test("move: another drive (copy, check, then the old one goes)", () =>
+            {
+                string root = r.NewDir("copyplace-copy");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles")), to = Path.Combine(root, @"D\Among Us PocketRoles");
+                var progress = new List<double>();
+                var m = new CopyMover { SameVolume = (a, b) => false, Progress = p => progress.Add(p.Value) };
+                var res = m.Move(from, to);
+                r.Check("ok, copied", res.Ok && !res.Renamed && res.Files == 4, res.ErrorKey + " " + res.Error + " files=" + res.Files);
+                r.Check("the copy is whole, and no marker is left in it", whole(to) && !File.Exists(Path.Combine(to, CopyPlace.MarkerName)));
+                r.Check("the old one is still there until the setting is written", whole(from));
+                r.Check("progress ended at 100%", progress.Count > 0 && Math.Abs(progress[progress.Count - 1] - 1) < 1e-9);
+                r.Check("then the old one goes (read-only files too)", m.DeleteOld(from) && !Directory.Exists(from));
+            });
+            r.Test("move: a copy that is not finished is undone by removing the new one", () =>
+            {
+                string root = r.NewDir("copyplace-undo");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles")), to = Path.Combine(root, @"D\Among Us PocketRoles");
+                var m = new CopyMover { SameVolume = (a, b) => false };
+                var res = m.Move(from, to);
+                r.Check("undo removes the copy and keeps the old one", res.Ok && m.Undo(res, from, to) && !Directory.Exists(to) && whole(from));
+            });
+            r.Test("move: stopped half-way (the app is quitting) -> nothing changed", () =>
+            {
+                string root = r.NewDir("copyplace-cancel");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles")), to = Path.Combine(root, @"D\Among Us PocketRoles");
+                int n = 0;
+                var m = new CopyMover { SameVolume = (a, b) => false, Cancelled = () => ++n > 2 };
+                var res = m.Move(from, to);
+                r.Check("not ok", !res.Ok && res.ErrorKey == "cp_failed", res.ErrorKey);
+                r.Check("the half-made copy is gone and the old one is whole", !Directory.Exists(to) && whole(from));
+            });
+            r.Test("move: what a stopped move left is cleared first; a folder of someone's is never touched", () =>
+            {
+                string root = r.NewDir("copyplace-leftover");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles")), to = Path.Combine(root, @"D\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(to, CopyPlace.MarkerName));
+                SelfTestRunner.Touch(Path.Combine(to, "half.bin"), "half");
+                var res = new CopyMover { SameVolume = (a, b) => false }.Move(from, to);
+                r.Check("the leftover was replaced by the whole copy", res.Ok && whole(to) && !File.Exists(Path.Combine(to, "half.bin")));
+
+                string from2 = makeCopy(Path.Combine(root, @"Desktop2\Among Us PocketRoles")), to2 = Path.Combine(root, @"Mine\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(to2, "my-notes.txt"), "mine");
+                var res2 = new CopyMover { SameVolume = (a, b) => true }.Move(from2, to2);
+                r.Check("someone's folder: refused, their file untouched, the copy still where it was",
+                    !res2.Ok && res2.ErrorKey == "cp_exists" && File.ReadAllText(Path.Combine(to2, "my-notes.txt")) == "mine" && whole(from2));
+            });
+            r.Test("move: no copy yet (before an install) -> nothing to move", () =>
+            {
+                string root = r.NewDir("copyplace-none");
+                var res = new CopyMover().Move(Path.Combine(root, "nothing"), Path.Combine(root, @"D\Among Us PocketRoles"));
+                r.Check("ok, nothing moved, nothing made", res.Ok && res.NothingToMove && !Directory.Exists(Path.Combine(root, "D")));
+            });
+            r.Test("probe: a real folder", () =>
+            {
+                string root = r.NewDir("copyplace-probe");
+                string cur = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles"));
+                string tgt = Path.Combine(root, @"Games\Among Us PocketRoles");
+                Directory.CreateDirectory(Path.Combine(root, "Games"));
+                var pf = CopyPlace.Probe(tgt, cur, Path.Combine(cur, "Among Us.exe"));
+                r.Check("current exists, target free, writable, same drive, size counted",
+                    pf.CurrentExists && !pf.TargetExists && pf.Writable && pf.SameVolume && pf.NeededBytes > 0, pf.CurrentExists + "|" + pf.TargetExists + "|" + pf.Writable + "|" + pf.SameVolume + "|" + pf.NeededBytes);
+                r.Check("and it may go there", CopyPlace.Check(pf) == null, CopyPlace.Check(pf));
+                r.Check("the write test left nothing behind (no file, no folder)", Directory.GetFileSystemEntries(Path.Combine(root, "Games")).Length == 0);
+                r.Check("a local drive is not a network place", !pf.Network);
+            });
+
+            // ---- 公開前レビュー 2026-10-01
+            r.Test("probe: a FILE with the copy's name is not a free place (cp_exists)", () =>
+            {
+                string root = r.NewDir("copyplace-file");
+                string cur = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles"));
+                string tgt = Path.Combine(root, @"Games\Among Us PocketRoles");
+                SelfTestRunner.Touch(tgt, "a file, not a folder");
+                var pf = CopyPlace.Probe(tgt, cur, Path.Combine(cur, "Among Us.exe"));
+                r.Check("there, not empty, not a copy", pf.TargetExists && !pf.TargetEmpty && !pf.TargetIsCopy && !pf.TargetHasMarker);
+                r.Equal("refused", "cp_exists", CopyPlace.Check(pf));
+            });
+            r.Test("probe: the app's own folders are protected (cp_protected)", () =>
+            {
+                string root = r.NewDir("copyplace-own");
+                string cur = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles"));
+                string data = Path.Combine(root, @"LocalAppData\StarPocket\Client"), exe = Path.Combine(root, @"Programs\StarPocket Client"), aegis = Path.Combine(root, @"LocalAppData\PocketRoles\Aegis");
+                foreach (var d in new[] { data, exe, aegis }) Directory.CreateDirectory(d);
+                foreach (var d in new[] { data, exe, aegis })
+                {
+                    var pf = CopyPlace.Probe(CopyPlace.TargetFor(d), cur, Path.Combine(cur, "Among Us.exe"), data, exe, aegis);
+                    r.Equal("inside " + Path.GetFileName(d), "cp_protected", CopyPlace.Check(pf));
+                }
+                var beside = CopyPlace.Probe(CopyPlace.TargetFor(Path.Combine(root, "LocalAppData")), cur, Path.Combine(cur, "Among Us.exe"), data, exe, aegis);
+                r.Check("beside them is fine", CopyPlace.Check(beside) == null, CopyPlace.Check(beside));
+            });
+
+            // ---- 公開前レビュー（2 回目）2026-10-01
+            r.Test("the exe's folder is the app's own only when it is a folder of its own (not the Desktop it was dropped on)", () =>
+            {
+                string home = @"C:\Users\u", desk = home + @"\Desktop", docs = home + @"\Documents", down = home + @"\Downloads";
+                Func<string, bool> own = d => CopyPlace.IsOwnExeFolder(d, desk, docs, down, home);
+                r.Check("the exe straight on the Desktop: the Desktop is everyone's", !own(desk) && !own(desk + "\\") && !own(@"c:\users\U\desktop"));
+                r.Check("... Downloads, Documents, the user's folder, a drive's top", !own(down) && !own(docs) && !own(home) && !own(@"D:\") && !own("D:"));
+                r.Check("a folder the zip made, and the setup's folder: the app's own", own(desk + @"\StarPocket Client") && own(home + @"\AppData\Local\Programs\StarPocket Client") && own(@"D:\Tools\StarPocket"));
+                r.Check("no exe folder: nothing to guard", !own(null) && !own(""));
+
+                string root = r.NewDir("copyplace-exedir");
+                string cur = makeCopy(Path.Combine(root, @"Elsewhere\Among Us PocketRoles"));
+                string rdesk = Path.Combine(root, "Desktop"), games = Path.Combine(rdesk, "Games");
+                Directory.CreateDirectory(games);
+                // what ClientApp.GuardedExeDir passes: the Desktop is not guarded, so a folder on it is fine (it was refused before)
+                string guarded = CopyPlace.IsOwnExeFolder(rdesk, rdesk) ? rdesk : null;
+                var onDesk = CopyPlace.Probe(CopyPlace.TargetFor(games), cur, Path.Combine(cur, "Among Us.exe"), Path.Combine(root, "Data"), guarded, Path.Combine(root, "Aegis"));
+                r.Check("exe on the Desktop: Desktop\\Games may hold the copy", guarded == null && CopyPlace.Check(onDesk) == null, CopyPlace.Check(onDesk));
+                var backHome = CopyPlace.Probe(CopyPlace.TargetFor(rdesk), cur, Path.Combine(cur, "Among Us.exe"), Path.Combine(root, "Data"), guarded, Path.Combine(root, "Aegis"));
+                r.Check("... and so may the Desktop itself (the old default place)", CopyPlace.Check(backHome) == null, CopyPlace.Check(backHome));
+                string zipDir = Path.Combine(rdesk, "StarPocket Client");
+                Directory.CreateDirectory(zipDir);
+                string guarded2 = CopyPlace.IsOwnExeFolder(zipDir, rdesk) ? zipDir : null;
+                var inZip = CopyPlace.Probe(CopyPlace.TargetFor(zipDir), cur, Path.Combine(cur, "Among Us.exe"), Path.Combine(root, "Data"), guarded2, Path.Combine(root, "Aegis"));
+                r.Equal("exe in a folder of its own: still refused inside it (an update replaces that folder)", "cp_protected", CopyPlace.Check(inZip));
+            });
+            r.Test("a copy inside Steam's folder is never moved from (its old place would be deleted)", () =>
+            {
+                r.Check("inside steamapps", CopyPlace.FromSteam(@"E:\SteamLibrary\steamapps\common\Among Us", null) && CopyPlace.FromSteam(@"C:\Program Files (x86)\Steam\steamapps\common\Among Us\", @"C:\x"));
+                r.Check("inside the game Steam found (wherever that is)", CopyPlace.FromSteam(@"D:\Games\Among Us\sub", @"D:\Games\Among Us"));
+                r.Check("the usual places are not", !CopyPlace.FromSteam(@"C:\Users\u\Desktop\Among Us PocketRoles", @"C:\Program Files (x86)\Steam\steamapps\common\Among Us")
+                    && !CopyPlace.FromSteam(@"C:\Games\steamappsX\Among Us PocketRoles", null) && !CopyPlace.FromSteam(null, null));
+                r.Check("cp_from_steam says where, and what to do (copyDir), in 3 languages",
+                    new[] { "ja", "zh-CN", "en" }.All(l => S.T(l, "cp_from_steam", @"E:\S\steamapps\common\Among Us").Contains(@"E:\S\steamapps\common\Among Us") && S.T(l, "cp_from_steam").Contains("copyDir")));
+            });
+            r.Test("probe: a folder that lets you make folders but not files (like C:\\) is not refused as unwritable", () =>
+            {
+                string root = r.NewDir("copyplace-acl");
+                string box = Path.Combine(root, "Drive");
+                Directory.CreateDirectory(box);
+                var di = new DirectoryInfo(box);
+                var me = System.Security.Principal.WindowsIdentity.GetCurrent().User;
+                // C:\ gives everyday users "create folders" on the top only, and "modify" inside what they made
+                var deny = new System.Security.AccessControl.FileSystemAccessRule(me, System.Security.AccessControl.FileSystemRights.CreateFiles,
+                    System.Security.AccessControl.InheritanceFlags.None, System.Security.AccessControl.PropagationFlags.None, System.Security.AccessControl.AccessControlType.Deny);
+                var sec = di.GetAccessControl();
+                sec.AddAccessRule(deny);
+                di.SetAccessControl(sec);
+                try
+                {
+                    bool fileRefused;
+                    try { File.WriteAllText(Path.Combine(box, "straight.txt"), "x"); fileRefused = false; }
+                    catch (UnauthorizedAccessException) { fileRefused = true; }
+                    r.Check("the set-up: a file cannot be put straight into it", fileRefused);
+                    r.Check("the copy can still go there (a folder is made, and written inside)", CopyPlace.CanWrite(box));
+                    r.Check("... and the test left nothing behind", Directory.GetFileSystemEntries(box).Length == 0, string.Join(",", Directory.GetFileSystemEntries(box)));
+                }
+                finally
+                {
+                    sec = di.GetAccessControl();
+                    sec.RemoveAccessRule(deny);
+                    di.SetAccessControl(sec);
+                }
+                r.Check("a folder that is not there is not writable", !CopyPlace.CanWrite(Path.Combine(root, "none")));
+            });
+            r.Test("move: a copy to another drive whose undo cannot finish -> the old copy is whole, and the words say so", () =>
+            {
+                string root = r.NewDir("copyplace-undofail");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles")), to = Path.Combine(root, @"D\Among Us PocketRoles");
+                var m = new CopyMover { SameVolume = (a, b) => false };
+                var res = m.Move(from, to);
+                bool undone;
+                using (File.Open(Path.Combine(to, @"BepInEx\plugins\PocketRoles.dll"), FileMode.Open, FileAccess.Read, FileShare.None))
+                    undone = m.Undo(res, from, to);
+                r.Check("the undo could not finish (a file was held)", res.Ok && !res.Renamed && !undone);
+                r.Check("the old copy is whole: it is still played where it is", whole(from));
+                r.Equal("so the words are the copy's (not \"choose that folder again\")", "cp_undo_failed_copy", CopyMover.UndoFailedKey(res.Renamed));
+                r.Equal("a rename's undo keeps its own words", "cp_undo_failed", CopyMover.UndoFailedKey(true));
+                // choosing the half-made copy again is refused (the old one is still there): the words must not send people there
+                var pf = CopyPlace.Probe(to, from, Path.Combine(from, "Among Us.exe"));
+                r.Equal("choosing that folder again would be refused", "cp_exists", CopyPlace.Check(pf));
+                r.Check("cp_undo_failed_copy names the folder to delete, says nothing changed, and does not send people back to it, in 3 languages",
+                    new[] { "ja", "zh-CN", "en" }.All(l => S.T(l, "cp_undo_failed_copy", @"D:\X").Contains(@"D:\X"))
+                    && S.T("ja", "cp_undo_failed_copy").Contains("前のまま") && !S.T("ja", "cp_undo_failed_copy").Contains("場所を変える")
+                    && S.T("zh-CN", "cp_undo_failed_copy").Contains("保持原样") && !S.T("zh-CN", "cp_undo_failed_copy").Contains("更改安装位置")
+                    && S.T("en", "cp_undo_failed_copy").Contains("as they were") && !S.T("en", "cp_undo_failed_copy").Contains("Change location"));
+            });
+            r.Test("move: a marker inside the copy itself is not carried to the new place", () =>
+            {
+                string root = r.NewDir("copyplace-srcmarker");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles")), to = Path.Combine(root, @"D\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(from, CopyPlace.MarkerName), "left over");
+                var res = new CopyMover { SameVolume = (a, b) => false }.Move(from, to);
+                r.Check("ok, the 4 real files copied", res.Ok && res.Files == 4, res.ErrorKey + " " + res.Error + " files=" + res.Files);
+                r.Check("no marker at the new place (it is not mistaken for a stopped move)", whole(to) && !File.Exists(Path.Combine(to, CopyPlace.MarkerName)));
+            });
+            r.Test("before an install: what a stopped move left is cleared, a folder without the marker is never touched", () =>
+            {
+                string root = r.NewDir("copyplace-clearleft");
+                string left = Path.Combine(root, @"D\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(left, CopyPlace.MarkerName));
+                SelfTestRunner.Touch(Path.Combine(left, @"BepInEx\half.bin"), "half");
+                var pf = CopyPlace.Probe(left, Path.Combine(root, "nothing"), Path.Combine(root, @"nothing\Among Us.exe"));
+                r.Check("the probe sees the leftover, and Check lets it be replaced", pf.TargetHasMarker && !pf.TargetIsCopy && !pf.CurrentExists && CopyPlace.Check(pf) == null, CopyPlace.Check(pf));
+                var m = new CopyMover();
+                r.Check("the leftover is removed, marker and all", m.ClearLeftover(left) && !Directory.Exists(left));
+                string mine = Path.Combine(root, @"Mine\Among Us PocketRoles");
+                SelfTestRunner.Touch(Path.Combine(mine, "my-notes.txt"), "mine");
+                r.Check("a folder without the marker: untouched", m.ClearLeftover(mine) && File.ReadAllText(Path.Combine(mine, "my-notes.txt")) == "mine");
+                r.Check("nothing there: nothing to do", m.ClearLeftover(Path.Combine(root, "none")));
+            });
+            r.Test("move: the old copy's game is running -> the old copy is not deleted", () =>
+            {
+                string root = r.NewDir("copyplace-oldrunning");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles")), to = Path.Combine(root, @"D\Among Us PocketRoles");
+                string asked = null;
+                var m = new CopyMover { SameVolume = (a, b) => false, OldInUse = p => { asked = p; return true; } };
+                var res = m.Move(from, to);
+                r.Check("copied", res.Ok && whole(to));
+                r.Check("DeleteOld refuses (false = 「残っています」) and the old copy is whole", !m.DeleteOld(from) && whole(from) && asked == from);
+                var m2 = new CopyMover { OldInUse = p => { throw new InvalidOperationException("cannot tell"); } };
+                r.Check("cannot tell -> not deleted either", !m2.DeleteOld(from) && whole(from));
+                r.Check("not running -> deleted", new CopyMover().DeleteOld(from) && !Directory.Exists(from));
+            });
+            r.Test("move: the old copy's game starts half-way -> the copy stops, nothing changed", () =>
+            {
+                string root = r.NewDir("copyplace-gamestart");
+                string from = makeCopy(Path.Combine(root, @"Desktop\Among Us PocketRoles")), to = Path.Combine(root, @"D\Among Us PocketRoles");
+                var t = new DateTime(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc);
+                int asks = 0;
+                // the "game" starts at the second question; the clock moves 600 ms per file
+                var started = CopyMover.Every(1000, () => ++asks >= 2, () => t);
+                var m = new CopyMover { SameVolume = (a, b) => false, Cancelled = () => { t = t.AddMilliseconds(600); return started(); } };
+                var res = m.Move(from, to);
+                r.Check("not ok, and nothing is left at the new place; the old one is whole", !res.Ok && !Directory.Exists(to) && whole(from), res.ErrorKey);
+            });
+            r.Test("CopyMover.Every: asks at most once per interval, and a yes stays yes", () =>
+            {
+                var t = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
+                int asks = 0; bool answer = false;
+                var f2 = CopyMover.Every(1000, () => { asks++; return answer; }, () => t);
+                bool a1 = f2();                          // asks (1)
+                t = t.AddMilliseconds(400); bool a2 = f2();   // too soon: no question
+                t = t.AddMilliseconds(700); answer = true; bool a3 = f2();   // 1.1 s: asks (2) -> yes
+                answer = false; bool a4 = f2();          // yes stays yes, no question
+                r.Check("answers no, no, yes, yes", !a1 && !a2 && a3 && a4);
+                r.Equal("questions asked", 2, asks);
+            });
         }
 
         /// <summary>A web that is not there: every call fails, so a test can never reach the network.</summary>

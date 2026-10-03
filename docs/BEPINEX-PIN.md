@@ -21,7 +21,7 @@ StarPocket Client は、インストールのときに BepInEx を配布元か�
 
 | 確かめること | どこに書いてあるか |
 |---|---|
-| **どこから取るか**（https で、次の 4 つのホストだけ。`api.github.com`・`github.com`・`objects.githubusercontent.com`・`builds.bepinex.dev`） | `src\Core\Downloads.cs` の `WebFetch.AllowedHosts` |
+| **どこから取るか**（https で、次の 5 つのホストだけ。`api.github.com`・`github.com`・`objects.githubusercontent.com`・`release-assets.githubusercontent.com`・`builds.bepinex.dev`） | `src\Core\Downloads.cs` の `WebFetch.AllowedHosts` |
 | **何が来たか**（ファイルの SHA-256 が、書き留めてある値と同じか） | `src\AppInfo.cs` の `BepZipSha256` と `BepSha256()` |
 
 今、書き留めてある値はこれです。
@@ -319,7 +319,7 @@ PE として読めないファイルだったときは `PeArch` が「わかり�
 |---|---|
 | `src\AppInfo.cs` | 版・ファイル名・取りに行く住所・**SHA-256 の表**（`BepSha256()` が引きます） |
 | `src\Core\FileHash.cs` | ファイルの SHA-256 を読む・比べる・書き方を確かめる |
-| `src\Core\Downloads.cs` | 取りに行ってよいホストの一覧（https のみ、4 つだけ） |
+| `src\Core\Downloads.cs` | 取りに行ってよいホストの一覧（https のみ、5 つだけ） |
 | `src\Core\Installer.cs` | `StepBepInEx`（値が無ければ断る・**ゲームと種類が違えば飛ばさずに入れ直す**）と `CheckAndExpandBep`（確かめる・合わなければ消す・合えばそのまま展開する）、`BepHref`（一覧ページから探す。版も種類も `AppInfo.BepZipName` から） |
 | `src\Core\PeArch.cs` | exe / dll が 32bit か 64bit かを PE ヘッダから読む（3 章）。決して例外を投げず、読めなければ「わかりません」 |
 | `src\Core\VerifiedZip.cs` | zip を 1 回だけ開いて離さず、値の計算・中身の確認・展開を同じ 1 つの開いたファイルで行う |

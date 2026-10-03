@@ -118,16 +118,18 @@ namespace Starpocket.Client
 #endif
                 UninstallRequest asked;
                 bool restart;
+                string restartWhy;
                 using (var app = new ClientApp(ctx, instance, uiDir, devTools, plan))
                 {
                     Application.Run(app);
                     asked = app.PendingUninstall;   // read before Dispose closes WebView2
                     restart = app.PendingRestart;
+                    restartWhy = app.RestartWhy;
                 }
                 // now: no window, no WebView2 control, no tray. The browser process lets go of the profile folder a
                 // moment later, so the deletes are tried a few times before anything is called a failure.
                 if (asked != null) return FinishUninstall(ctx, asked);
-                if (restart) return RestartForDevSwitch(ctx);
+                if (restart) return RestartForDevSwitch(ctx, restartWhy);
                 return 0;
             }
         }
@@ -281,12 +283,10 @@ namespace Starpocket.Client
             Check = p => ctx.NewInstaller(p).CheckUpdate(false),   // "shall I install it?" is always answered no
             Report = () => ctx.NewReportBuilder().MakeReport(),
             ComputeStatus = () => ctx.ComputeStatus(false),
-            Housekeep = () =>
-            {
-                var gl = ctx.NewGameLogs();
-                gl.RemoveExpired();   // as when the launcher opens: 30 days, then keep the last game's log
-                gl.SaveGameLog();
-            },
+            // as when the launcher opens: 30 days, then keep the last game's log (no day zips here, as before).
+            // v1.1.2 直し 1: while the app has never been opened on this PC, only the copy - nothing is deleted, and no mark
+            // is written here (src\Core\FirstCleanup.cs: the first start of the app itself writes it)
+            Housekeep = () => FirstCleanup.Housekeep(ctx.NewGameLogs(), ctx.Settings.CleanupArmed, false),
         };
 
         /// <summary>The words could not be understood. It is said on the console the command came from; when there is no
@@ -312,17 +312,18 @@ namespace Starpocket.Client
         /// (ReleaseEarly), so the new process is a plain first start; it reads settings.json and comes up in the mode
         /// the switch asked for. No arguments are passed (ShellOpen.Self). A restart that cannot be started is written
         /// to the log and ends with 1 - the switch itself is already saved, so the next start by hand is in the new mode.</summary>
-        static int RestartForDevSwitch(ClientContext ctx)
+        /// <summary>The app opens again: the developer switch, or (2026-10-01) the mod copy moved to another folder.</summary>
+        static int RestartForDevSwitch(ClientContext ctx, string why = "developer switch")
         {
             try
             {
                 ShellOpen.Restart();
-                ctx.Log.Write("developer switch: " + AppInfo.Name + " starts again");
+                ctx.Log.Write(why + ": " + AppInfo.Name + " starts again");
                 return 0;
             }
             catch (Exception ex)
             {
-                ctx.Log.Write("developer switch: could not start again: " + ex.Message);
+                ctx.Log.Write(why + ": could not start again: " + ex.Message);
                 return 1;
             }
         }

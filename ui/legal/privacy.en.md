@@ -1,7 +1,7 @@
 # StarPocket Games Privacy Policy
 
 - Version: 1.0
-- Last edited: 2026-09-26
+- Last edited: 2026-10-02
 - Takes effect: 2026-09-26
 
 > "(planned)" = a feature not built yet. By the day that feature is released, this document will be made to match what is true.
@@ -18,7 +18,7 @@
 - What reaches us is only what you send yourself (support messages, report zips, appeals) and the information of an account you made yourself.
 - Support chat conversations are deleted 30 days after the last message (appeals in progress and emails: up to 90 days). Our servers do not store IP addresses.
 - The support bot is an AI. What you write is sent to a US company called Anthropic. When staff have AI write a draft reply, it is also sent to that company, only when a staff member presses the button. Do not write your real name, address, phone number, school or passwords.
-- Chat translation is **off by default**. When it is turned on, the room's chat text is sent to Google or DeepL. You can turn it on from the first screen of StarPocket Client and in settings. That is for a fresh install: the config file of someone upgrading from v0.5.4 or earlier stays on (3.9).
+- Chat translation is **off by default**. When it is turned on, the room's chat text is sent to Google or DeepL. You can turn it on from the first screen of StarPocket Client and in settings. That is for a fresh install: for someone who upgraded from v0.5.4 or earlier and never changed this setting, it may still be on (3.9).
 - Players removed for a "Certain" cheat in a room are reported to Innersloth (**off by default**). You can turn it on from the first screen of StarPocket Client and in settings. Every way of installing starts off (3.9).
 - You do not have to make a StarPocket Account. If you do, it is not linked to you in the game.
 - To have your records erased, type `/cmd id` in a room's chat and send us the code it shows.
@@ -163,7 +163,7 @@ They are in the definitions file (public on GitHub, signed). Details are in Arti
 
 1. Evidence records from report zips and "One player's evidence" zips (3.3) sent to us are imported into the ban console on the author's and admins' PCs.
    - Imported evidence records contain the player's name, the hash of their PUID and their erase code (3.3). So the author and admins also receive the codes of other people, not only of the person who sent the zip.
-   - The codes are used to match against the erase list, so the records of people who asked for erasure are erased (today's ban console does not match them yet;  in item 4).
+   - The codes are used to match against the erase list, so the records of people who asked for erasure are erased (today's ban console does not match them yet; see item 4).
 2. The action record (`audit.log`) keeps:
    - time, action, evidence number, name, rule, reason, who proposed it
    - Friend codes and PUIDs are not kept.
@@ -184,7 +184,7 @@ They are in the definitions file (public on GitHub, signed). Details are in Arti
    - PUIDs, friend codes, hashes and evidence files are not sent.
    - The box for pasting the support request's text is not shown until the basis for sending it abroad (Article 6(3)) is settled. Once it is used, friend codes (their name part too), e-mail addresses, URLs, @names and long numbers are hidden and the addressee's, the recorded and the staff member's names become placeholders before it is sent; anything else in the text that cannot be hidden, such as other people's names, is sent as written. Before it first goes out, the author sees exactly what is sent. Text from people under 16 and from people in mainland China is not pasted (3.1, item 5). Text of requests that came by e-mail or Discord ticket is not pasted until the basis is settled.
    - The draft is checked on the author's PC (a draft that does not keep the template's result paragraphs word for word, has words against the result, has a number, date, e-mail address, URL or the like that the template does not have, or leaves out the template's number or dates is not used), and a person sends the reply. The ban console never sends a reply.
-   - Anthropic's handling (no training, deletion period) is the same as in 3.1, item 3. [Check: confirm against Anthropic's commercial terms before publishing (OWNER-DECISIONS, "Anthropic に聞くこと" 4)]
+   - Anthropic's handling (no training, deletion period) is the same as in 3.1, item 3.
 
 ### 3.6 Websites
 
@@ -240,13 +240,12 @@ These are sent directly from the host's PC to the other side. They do not reach 
   - In the planned form, nothing about your account would be sent: PocketRoles would receive the whole list from our server and compare it inside this PC. As with any connection, the IP address would reach our server and Cloudflare.
   - We will not use a form that asks "does this account have a shared ban?" (sending the first 5 characters of the hash of the PUID and a number that changes every time). Because the list's hashes are public, the server could tell who is asking when someone on the list asks.
 - **How chat translation is decided**
-  - In StarPocket Client, the first "Terms of Use and Privacy Policy" screen has a "Use chat translation" checkbox. It starts unticked. Unless you tick it, nothing is sent.
+  - In StarPocket Client, the first "Terms of Use and Privacy Policy" screen has a "Use chat translation" checkbox. It starts unticked. Unless you tick it, nothing is sent (someone who upgraded from v0.5.4 or earlier may keep the old setting until the mod is reinstalled or updated with StarPocket Client (v1.1.2 or later); see below).
   - You can change it later in settings, under "PocketRoles → Chat translation".
-  - A fresh install defaults to "off" from v0.5.5 on (`Bind("Translate", "Enabled", false)`). But **the config file of someone upgrading from v0.5.4 or earlier stays "on".** BepInEx does not overwrite a value that is already in the file, and the file cannot tell "on because the host chose it" from "on because that was the default". v0.5.5 tells that host once and hands them `/opt upgrade off`, but changes no value.
+  - A fresh install defaults to "off" from v0.5.5 on (`Bind("Translate", "Enabled", false)`). But **for someone who upgraded from v0.5.4 or earlier and never changed this setting, the config file may still say "on".** BepInEx does not overwrite a value that is already in the file, and the file cannot tell "on because the host chose it" from "on because that was the default". v0.5.5 tells that host once and hands them `/opt upgrade off`, but changes no value. When the mod is reinstalled or updated with StarPocket Client (v1.1.2 or later), the answer given on the first screen is written to the config file.
 - **How automatic reporting is decided**
   - On the first screen of StarPocket Client, under chat translation, there is an "Automatically report players removed for cheating to Innersloth" checkbox. It starts unticked. Only if you tick it does anyone get reported automatically (players are still removed from the room either way, as before).
   - You can change it later in settings, under "PocketRoles → Aegis".
-  - (Checked) However PocketRoles is installed, the default in v0.5.5 is "off" (`Bind("AntiCheat", "AutoReport", false)`; the key `[AntiCheat] AutoReport` existed in no build up to v0.5.4, so an upgrader's config file does not hold it either). D-10, D-40.
 - People who join have not agreed to anything. When translation is on, the welcome line says "Auto-translation is on" (not if the host changed or turned off the welcome line).
 
 ### 3.10 What the Software keeps on the host's PC
@@ -347,7 +346,7 @@ We use information about individuals only for:
    | Anthropic PBC | The support bot, and staff reply drafts and translations (both planned; drafts only when a staff member presses the button); reply drafts in the ban console (only when the author presses the button) | Text of conversations with the bot. For drafts, the text (with friend codes, email addresses, URLs and long numbers hidden), kind, language and code of that support request (3.1, item 11). For the ban console's drafts, the reply's kind, language, ban number, rule category, dates and template (names and a shared ban line's number as placeholders); the box for pasting request text is not shown until the basis is settled (3.5, item 5) | United States | United States (to be checked) | Consent (the chat's first screen), or a system meeting the standards (DPA) . Email and Discord requests are not sent until the basis is settled | A data processing agreement (DPA) is part of its terms. API content is not used for training. Deleted within 30 days (up to 2 years for content judged to break its rules; safety scores up to 7 years) |
    | Cloudflare, Inc. | Entry to the home server (hides the home IP address), bot check | Traffic content (between the encryption end points), IP addresses, browser information | United States | Cannot be identified (traffic is handled at whichever of its locations around the world is near the visitor) | A system meeting the standards (DPA), or consent  | Publishes a DPA and security measures (to be checked) |
    | Resend (email-sending company) | Emails for sign-in links, reply notices and account notices (planned) | Email address, email content (no support message text) | United States | United States (to be checked) | A system meeting the standards (DPA); we do not use a company without a DPA | We sign a data processing agreement (DPA), checked before we contract. Its published privacy policy and security measures (to be checked) |
-   | Discord Inc. | Community, tickets, notices to staff, sign-in with Discord (planned) | Names and messages in Discord. Notices contain only number, kind and language. For sign-in, the Discord user ID and name | United States | Cannot be identified (to be checked) |  (check separately the parts where users use Discord themselves and the parts we send) | Its published privacy policy. No DPA with us |
+   | Discord Inc. | Community, tickets, notices to staff, sign-in with Discord (planned) | Names and messages in Discord. Notices contain only number, kind and language. For sign-in, the Discord user ID and name | United States | Cannot be identified (to be checked) |  | Its published privacy policy. No DPA with us |
    | Ticket Tool (the Discord ticket bot) | Discord tickets | What is written in tickets | To be checked | To be checked |  | Set not to keep transcripts |
    | GitHub, Inc. | Site, downloads, definitions file, central lists, documents such as the terms | Visitors' IP addresses, list contents | United States | United States and others (to be checked) |  | Its published privacy policy and security measures (to be checked) |
    | Google LLC (Gmail) | Support email | Email content | United States | Cannot be identified (to be checked) | A personal account with no DPA, so rely on consent or move to a service with a DPA   | Its published privacy policy |
@@ -521,7 +520,7 @@ We use information about individuals only for:
 ## Article 15 (What we show at installation)
 
 1. The first time StarPocket Client opens, before it installs or sends anything, it shows these screens in this order:
-   1. "Terms of Use and Privacy Policy": a summary and the full texts, the versions and dates, a "Use chat translation" checkbox (**unticked at first**; nothing is sent unless you tick it), an "Automatically report players removed for cheating to Innersloth" checkbox (**unticked at first**; nobody is reported automatically unless you tick it), an "I have read and agree to the Terms of Use and the Privacy Policy" checkbox (unticked at first), and "Agree"
+   1. "Terms of Use and Privacy Policy": a summary and the full texts, the versions and dates, a "Use chat translation" checkbox (**unticked at first**; nothing is sent unless you tick it; if you upgraded from v0.5.4 or earlier, see 3.9), an "Automatically report players removed for cheating to Innersloth" checkbox (**unticked at first**; nobody is reported automatically unless you tick it), an "I have read and agree to the Terms of Use and the Privacy Policy" checkbox (unticked at first), and "Agree"
    2. About Aegis: what it checks, what it does not do (no driver, no restart, PC scan results not sent), and "Install"
    3. Installation: progress, with a one-line explanation of what is happening now
 2. Changes to PC settings (starting the Client when the PC starts, making a desktop shortcut and so on) are made only when you choose them.
@@ -566,3 +565,4 @@ We use information about individuals only for:
 | 0.8 (draft) | 2026-09-23 | Put the number of different hosts a shared ban needs back to **2 or more** (3.5). The "3" had been written into the drafts without ever asking the owner (the official site was not published yet at that time, so it never went out on a published page); on 2026-09-23 the owner answered "keep 2 for now - with so few hosts, 3 would mean shared bans almost never happen; raise it later when there are more hosts" (D-39). Said the number may go up as more hosts join, and split the three numbers that sit together into **hosts** (2 or more different hosts), **bans** (2 per 30 days from the same host) and **mistakes** (3 times within 30 days). The bans and mistakes numbers are unchanged. Also corrected the note about the ban console: the host count (`GateRules.MinHosts = 2`) already matches, and all that is left is merging shared-ban-gate into v0.5.5 (3.5). In the same day's review, one row was added to Article 5: other people's names, account names and URLs written in a report of a fake download site are deleted 30 days after the report has been checked and dealt with. No new intake is built; one label is added to the existing support requests instead (`SUPPORT-SPEC` §5.8) |
 | 0.9 (draft) | 2026-09-24 | Followed the renumbering of the Terms (Article 10 became Article 13). Added item 4 to Article 7(2) (handing over the running of the Services; Terms of Use Article 27, Act on the Protection of Personal Information Article 27(5)(ii)) |
 | 1.0 | 2026-09-26 | The first published version. **The text itself is unchanged from 0.9.** The "(draft)" marks, the lines explaining those marks and the "not published yet" wording are gone, and the date it takes effect is filled in. |
+| 1.0 | 2026-10-02 | Removed the fragments and working notes the clean-up had left behind (the sentence in 3.5 that broke off at "in item 4" and a check mark there, a note in 3.9 confirming a default, and a working note in the Discord row of the table in Article 6). Corrected the chat-translation explanation (summary, 3.9, Article 15) to the facts: the setting of a host who upgraded from v0.5.4 or earlier and never changed it may stay on, and reinstalling or updating the mod with StarPocket Client (v1.1.2 or later) applies the answer from the first screen. **The policy itself is unchanged.** The version stays 1.0 |

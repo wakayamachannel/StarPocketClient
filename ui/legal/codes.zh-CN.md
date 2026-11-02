@@ -264,7 +264,7 @@ PocketRoles 有新版本（v…）。
 
 咨询的服务器停止了（停电、维护等）。
 
-**该怎么做:** 请使用邮件（pocketroles.report+help@gmail.com）或 Discord 工单
+**该怎么做:** 请使用邮件（support@starpocketgames.com）或 Discord 工单
 
 ### N-12  无法完成机器人验证
 

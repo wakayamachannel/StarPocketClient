@@ -60,7 +60,7 @@ PowerShell を使わないなら、コマンドプロンプトで `certutil -has
 | 前回のログの保存と 30 日の削除（今のランチャーと同じ規則・同じ Mutex）。**この PC で初めて使った時（窓を開いた時も `--action` で動かした時も）だけは、何も消しません**（ログの保存だけ。events.log の整理も。v1.1.2）。設定ファイル（settings.json）が壊れていた時は `settings.json.broken-<日時>` に名前を変えて残し、既定値で続けます | `src\Core\GameLogs.cs`・`src\Core\FirstCleanup.cs`・`src\Core\ClientSettings.cs` |
 | Aegis（PowerShell 版の `Aegis.ps1`（PocketRoles リポジトリの `aegis\Aegis.ps1`）のトレイと起動前スキャンを同じプロセスの中へ）: 起動時のスキャン 13 項目、署名付きの定義ファイル（同梱・キャッシュ・起動時に 1 回の取得と、12 時間たった後に窓を開いた時かプレイの時の取り直し、古い版に戻さない）、ゲーム中のログの見張りと Aegis 独自の通知、events.log の 30 日の整理、起動前スキャン（赤があればプレイを止める） | `src\Aegis\`（`AegisService.cs` が入口。シェルとの境目は `IAegisService.cs`） |
 | 同梱の定義ファイル（MOD のリリースと同じバイト）。**このリポジトリには入れていません**（リリースの添付として配っています。下の「Aegis」） | `aegis\definitions.txt`・`aegis\definitions.txt.sig`（exe の隣に置く） |
-| 同梱の利用規約・プライバシーポリシー・遊び方のルール（3 言語。下書きから印とメモを落とした物で、サイトの文と同じ）。v1.1.2: 清書で残っていた切れ端と作業のメモ（利用規約 第18条2項・第11条4項3号、プライバシーポリシー 3.5・3.9・第6条）を消し、チャット翻訳の説明を本当の事（v0.5.4 以前から上げて設定を変えていない人はオンのまま残る事がある）に直した。版は 1.0 のまま（同意し直しの画面は出ない）。自己テストが、切れ端とメモが無い事を 1 行ずつ見る | `ui\legal\*.md`・`src\SelfTest\ConsentSelfTests.cs` |
+| 同梱の利用規約・プライバシーポリシー・遊び方のルール（3 言語）。v1.1.3: 公開した HTML の本文をそのまま 1.3 に更新（2026-11-01 施行）。同意対象の版も 1.3 に更新し、旧版で同意済みの人には同意し直しの画面を出す | `ui\legal\*.md`・`src\AppInfo.cs`・`src\SelfTest\ConsentSelfTests.cs` |
 | v1.3: フレンド欄のプロフィールの絵に自分の画像（PNG / JPG / ICO / BMP / GIF、20 MB・3000 万画素まで。WebP はこの版では読まない）。アプリが画像を選ぶ窓を開き、正方形 256px の PNG の写しを `%LOCALAPPDATA%\StarPocket\Client\profile\avatar.png` に置く（元の画像は触らない・どこにも送らない）。「画像をやめて元の絵に戻す」で写しを消す。読めない画像は元の絵のままで理由を出す | `src\Core\ProfileImage.cs`・`src\Shell\ClientApp.cs`・`ui\` |
 | 画面なしの自己テスト | `src\SelfTest\` |
 

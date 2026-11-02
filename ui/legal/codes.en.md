@@ -264,7 +264,7 @@ The signature of the news received doesn't match, so it isn't used. The last new
 
 The support server is down (a power cut, maintenance and so on).
 
-**What to do:** Please use email (pocketroles.report+help@gmail.com) or a Discord ticket
+**What to do:** Please use email (support@starpocketgames.com) or a Discord ticket
 
 ### N-12  The bot check didn't work
 

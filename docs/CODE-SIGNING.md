@@ -28,7 +28,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 `StarPocket Client.exe` は、Among Us の**ホスト専用 MOD「PocketRoles」**を入れて起動するためのランチャーです。今まで PowerShell のスクリプト（`PocketRolesLauncher.ps1` と `aegis\Aegis.ps1`）で行っていたことを、1 つのネイティブアプリにまとめたものです。作っているのは StarPocket Games（個人）で、ソースはすべてこのリポジトリにあります。
 
 - C# / WinForms / WebView2、.NET Framework 4.8、x86
-- 版: **1.1.2**（このページはこの版に合わせてあります。`StarpocketClient.csproj` の `FileVersion` = `app.manifest` の `assemblyIdentity version` = exe の `FileVersion` = `1.1.2.0`、`src\AppInfo.cs` の `Version` = `1.1.2`。CI と自己テストが毎回この 4 つを突き合わせます）
+- 版: **1.1.3**（このページはこの版に合わせてあります。`StarpocketClient.csproj` の `FileVersion` = `app.manifest` の `assemblyIdentity version` = exe の `FileVersion` = `1.1.3.0`、`src\AppInfo.cs` の `Version` = `1.1.3`。CI と自己テストが毎回この 4 つを突き合わせます）
 - ライセンス: GPL-3.0-or-later（`LICENSE`・`NOTICE`）
 - 管理者権限は使いません（`app.manifest` の `requestedExecutionLevel level="asInvoker"`）。インストール先もレジストリも、そのユーザーの分だけです（HKCU）。
 
@@ -203,13 +203,13 @@ v1.1.0 でフォルダ選択を足したのは、作業コピーをデスクト�
 - CI の action は、すべてコミットの SHA で固定済みです。
 - サイトのページ: [プライバシーポリシー](https://starpocketgames.com/privacy.ja.html)・[コード署名について](https://starpocketgames.com/code-signing.ja.html)・[利用規約](https://starpocketgames.com/terms.ja.html)・[遊び方のルール](https://starpocketgames.com/rules.ja.html)・[エラーコード](https://starpocketgames.com/codes/)（3 言語）
 - GitHub の 2 要素認証。
-- リリース: `v1.0.0` から `v1.1.1` までを出しました。このページは次の `v1.1.2` に合わせてあります。配るのは、**公開 CI がそのタグから建てた** `StarPocketClient-unsigned` です（手元の PC で建てた物は配りません）。
+- リリース: `v1.0.0` から `v1.1.2` までを出しました。このページは次の `v1.1.3` に合わせてあります。配るのは、**公開 CI がそのタグから建てた** `StarPocketClient-unsigned` です（手元の PC で建てた物は配りません）。
 
 ---
 
 ## English (summary for reviewers)
 
-**StarPocket Client** (version 1.1.2) is a launcher for *PocketRoles*, a host-only mod for the game Among Us. It replaces two
+**StarPocket Client** (version 1.1.3) is a launcher for *PocketRoles*, a host-only mod for the game Among Us. It replaces two
 PowerShell scripts with one native Windows app, so it shows in Task Manager under its own name and icon instead of
 "Windows PowerShell". Publisher: StarPocket Games (an individual). Licence: GPL-3.0-or-later.
 
@@ -300,7 +300,7 @@ PowerShell scripts with one native Windows app, so it shows in Task Manager unde
 
 （给审核者的摘要。内容和上面的 English 相同，详细说明在前面的日语部分。）
 
-**StarPocket Client**（版本 1.1.2）是 Among Us 的**仅房主需要安装的模组 PocketRoles** 的启动器。它把两个 PowerShell 脚本
+**StarPocket Client**（版本 1.1.3）是 Among Us 的**仅房主需要安装的模组 PocketRoles** 的启动器。它把两个 PowerShell 脚本
 合成了一个原生的 Windows 应用，所以在任务管理器里显示的是它自己的名字和图标，而不是“Windows PowerShell”。
 发布者：StarPocket Games（个人）。许可证：GPL-3.0-or-later。
 

@@ -264,7 +264,7 @@ GitHub への問い合わせが多すぎて、しばらく使えません（回�
 
 問い合わせのサーバーが止まっています（停電・点検など）。
 
-**どうすればいいか:** メール（pocketroles.report+help@gmail.com）か Discord のチケットを使ってください
+**どうすればいいか:** メール（support@starpocketgames.com）か Discord のチケットを使ってください
 
 ### N-12  ロボットの確認ができません
 

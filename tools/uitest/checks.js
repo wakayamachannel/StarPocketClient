@@ -1266,6 +1266,22 @@ window.__spChecks = async function(group, mode){
         await tick();
         add('同意の画面: チェックを入れると「同意する」が押せる',
           $('#frAccept').getAttribute('aria-disabled') === 'false');
+        /* 2026-11-03: 同意の画面の文字の色を測る。--set-fg をどこにも決めておらず、明るいテーマで 1.08（読めない）だった。
+           hc は系の色なので測らない。「同意する」は押せる今のうちに測る（押せない時は薄くしてあり、AA の外）。 */
+        if (!hc) {
+          const reads = (n, sel, withOpacity = true) => seen(sel, el => {
+            const s = getComputedStyle(el), c = rgb(s.color), bg = bgOf(el);
+            const a = c[3] * (withOpacity ? Number(s.opacity) : 1);
+            ratioAtLeast(n + 'が読める', ratio(over([c[0], c[1], c[2], a], bg), bg), 4.5);
+          }, n + 'が読める');
+          reads('同意の画面: 本文', '#firstrun'); reads('同意の画面: 「同意する」', '#frAccept');
+          reads('同意の画面: 言語の押した物', '.fr-langs [aria-pressed="true"]'); reads('同意の画面: チェックを促す文', '#frNeed');
+          reads('同意の画面: 文書が読めない時の文', '#frDocWarn'); reads('同意の画面: 「アンインストール」', '#frUninstall');
+          reads('同意の画面: 「同意しない」の確認の文', '.fr-ask'); reads('同意の画面: 確認の「戻る」', '#frAskBack');
+          /* 自分の不透明度で薄くしてある文字（.fr-step .75・.fr-docfoot .85・.fr-ask p .9）は、容れ物とは別にその物を測る */
+          reads('同意の画面: 「はじめに」', '.fr-step'); reads('同意の画面: 文書の版の行', '.fr-docfoot');
+          reads('同意の画面: 「同意しない」の確認の段落', '.fr-ask p');
+        }
         agree.checked = false;
         agree.dispatchEvent(new Event('change'));
         await tick();
